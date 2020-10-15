@@ -1,0 +1,185 @@
+---
+title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
+subtitle: "Computational workflow for the creation of Gene transfer format file with smallRNA sequences, GRCh38"
+author: "Constantinos Yeles(Konstantinos Geles)"
+date: "`r format(Sys.Date(), '%a %b %d %Y')`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+  html_document:
+    toc: yes
+    toc_depth: 3
+    theme: paper 
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+# Introduction
+With the intent to annotate and quantify small-RNA sequence data (and in 
+particular piRNA) derived from Next-Generation Sequencing, a workflow has been implemented. For the generation of annotation files  and results widely used tools of alignment, annotation, quantification and differential expression algorithms have been utilized. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight 
+modifications can be applied to all small-RNA categories of interest.
+
+To make it more versatile  and reproducible, we adopted the _[containerization approach](https://www.docker.com/resources/what-container)_ as the software 
+deployment is fast, efficient, and potentially bug-free. It can be used in 
+various operating systems with only requirements the installation of the docker
+engine and have some minimum requirements of processing power and RAM to 
+run the most memory demanding tools.
+
+# Materials and Methods
+The workflow has been primarily carried out on a Linux server, but it can be
+used easily on a Windows or Mac OS machine as long as changes have been done to 
+appropriate functions/operations.
+
+The workflow utilizes _[Bash](https://www.gnu.org/software/bash/)_ and 
+_[R](https://www.r-project.org/)_ 
+scripting for various operations.
+For the application of the workflow, the following tools have been used:
+
+*  _[Rstudio](https://rstudio.com/)_ for R scripting,
+
+*  _[STAR](https://www.ncbi.nlm.nih.gov/pubmed/23104886)_ for alignment,
+
+*  _[Samtools](https://www.htslib.org/)_ for various modifications and extraction
+of reads from resulted aligned files,
+
+*  _[FastQC](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)_ for quality control,
+
+*  _[Cutadapt](https://journal.embnet.org/index.php/embnetjournal/article/view/200)_ for adapter trimming,
+
+*  _[bedtools](https://bedtools.readthedocs.io/en/latest/index.html)_ for bam to bed manipulation, 
+
+*  _[Salmon](https://www.nature.com/articles/nmeth.4197/)_ for transcript-level quantification,
+
+*  _[featureCounts](https://academic.oup.com/bioinformatics/article/30/7/923/232889)_ for transcript-level quantification 
+
+Databases that have been used:
+
+*  _[piRNABank](http://pirnabank.ibab.ac.in/)_ for piRNA sequences,
+
+*  _[RNAcentral](https://rnacentral.org/)_ for smallRNA sequences
+
+# Workflow
+## 1. Acquisition and Preprocessing of the small ncRNA sequences
+### i. Downloading the files for the generation of a Gene transfer format(gtf) 
+
+piRNA sequences for mouse were downloaded from piRNABank to enrich in piRNA sequences the gtf file, and small-RNA genome coordinates(bed files) from RNACentral have been acquired
+```{bash download the Databases}
+# all the files and folders for the workflow are created in the working directory 
+# plus the results of the analysis
+docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
+
+mkdir -p my_data/mouse_data/GRCm38
+
+# piRNAbank sequences
+wget http://pirnabank.ibab.ac.in/downloads/all/mouse_all.zip -O my_data/mouse_data/mouse_all.zip
+
+unzip -d my_data/mouse_data/  my_data/mouse_data/mouse_all.zip && rm my_data/mouse_data/mouse_all.zip
+
+# RNAcentral genome coordinates
+wget http://ftp.ebi.ac.uk/pub/databases/RNAcentral/current_release//genome_coordinates/bed/mus_musculus.GRCm38.bed.gz -O my_data/mouse_data/mus_musculus.GRCm38.bed.gz
+
+# GRCm38 fasta for STAR index 
+wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M25/GRCm38.primary_assembly.genome.fa.gz -O my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa.gz
+
+pigz -d my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa.gz 
+```
+### ii. Preprocessing of the piRNAbank file
+
+The fasta file from piRNAbank has U character instead of T in the sequences, so changes have been made using [sed](https://www.gnu.org/software/sed/)
+```{bash sed fasta}
+sed 's/U/T/g' my_data/mouse_data/mouse_pir.txt > my_data/mouse_data/pirnaBank_mouse.fasta
+# exit docker container
+exit
+```
+### iii. Run docker and Load libraries
+
+```{bash Run docker bioc I}
+docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
+-e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
+# we prefer to work on Rstudio to perform everything on R otherwise  R on 
+# bash can be used directly
+```
+```{r load the libraries I}
+suppressPackageStartupMessages({
+  library('tidyverse') 
+  library('data.table')
+  library('plyranges')
+  library("BSgenome.Mmusculus.UCSC.mm10")
+})
+```
+### iv. Remove duplicated sequences
+
+```{r remove duplicates}
+pirnaB_mm8 <- Biostrings::readDNAStringSet("mouse_data/pirnaBank_mouse.fasta")
+pirnaB_mm8 %>% length() ## >[1] 1399813
+
+# remove duplicate sequences-----
+pirnaB_mm8 <- pirnaB_mm8[!duplicated(pirnaB_mm8)]
+pirnaB_mm8 %>% length() ## >[1] 39986
+
+# clean the names----
+names(pirnaB_mm8) <- names(pirnaB_mm8) %>%  
+  str_remove("\\|M.+") %>% 
+  str_replace("\\|gb\\|","_") 
+
+# write the fasta ----
+pirnaB_mm8 %>% 
+  Biostrings::writeXStringSet("mouse_data/pirnaB_mm8_removed_duplicates.fa" )
+```
+
+
+```{bash exit bioc}
+# exit docker container
+exit
+```
+### v. Align piRNA sequences to mouse genome
+
+Afterwards, alignment of piRNA sequences to the mouse genome utilizing STAR aligner has been performed.
+Then, samtools has been used to export the sequences in fasta format
+```{bash STAR_SAM}
+docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
+
+# create index
+STAR --runMode genomeGenerate --genomeDir my_data/mouse_data/GRCm38 --genomeFastaFiles my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa --runThreadN 6
+
+mkdir my_data/mouse_data/piRNABank_mouse_m10
+
+# align the piRNABank sequences
+STAR --genomeDir my_data/mouse_data/GRCm38 --genomeLoad LoadAndKeep \
+--readFilesIn "my_data/mouse_data/pirnaB_mm8_removed_duplicates.fa"  \
+--runThreadN 6 --alignIntronMax 0 --outSAMattributes NH HI NM MD \
+--outFilterMultimapNmax 100 --outReadsUnmapped Fastx --outFilterMismatchNmax 0 \
+--outFilterMatchNmin 16 --outFileNamePrefix "my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_"
+
+# sort the sam file
+samtools sort -O bam -o my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_sorted.bam -@ 6 \
+my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_Aligned.out.sam
+
+# BAM to fasta format
+samtools fasta -F 4 -@ 8 \
+my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_sorted.bam > my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_sorted.fasta
+
+# BAM to bed format
+bedtools bamtobed < my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_sorted.bam > my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_sorted.bed
+
+exit
+```
+## 2. Unification of pirnaBANK sequences and RNAcentral ncRNA sequences 
+### Run docker, load libraries
+
+```{bash Run docker bioc II}
+docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
+-e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
+```
+```{r load the libraries II}
+suppressPackageStartupMessages({
+  library('tidyverse') 
+  library('data.table')
+  library('plyranges')
+  library("BSgenome.Mmusculus.UCSC.mm10")
+})
+```

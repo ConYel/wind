@@ -1,6 +1,6 @@
 ---
 title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
-subtitle: "Computational workflow for the creation of Gene transfer format file with smallRNA sequences"
+subtitle: "Computational workflow for the creation of Gene transfer format file with smallRNA sequences, GRCh38"
 author: "Constantinos Yeles(Konstantinos Geles)"
 date: "`r format(Sys.Date(), '%a %b %d %Y')`"
 output:
@@ -20,12 +20,8 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ```
 
 # Introduction
-With the intent to annotate and quantify small RNA sequence data (and in 
-particular piRNA) derived from Next-Generation Sequencing, a workflow has been implemented 
-with the intention to generate files utilizing widely used  tools of alignment, annotation, 
-quantification and differential expression algorithms. Although it is 
-focused particularly on piRNAs (as is our main subject of research) with slight 
-modifications can be applied to all small RNA categories of interest.
+With the intent to annotate and quantify small-RNA sequence data (and in 
+particular piRNA) derived from Next-Generation Sequencing, a workflow has been implemented. For the generation of annotation files  and results widely used tools of alignment, annotation, quantification and differential expression algorithms have been utilized. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight modifications can be applied to all small-RNA categories of interest.
 
 To make it more versatile  and reproducible, we adopted the _[containerization approach](https://www.docker.com/resources/what-container)_ as the software 
 deployment is fast, efficient, and potentially bug-free. It can be used in 
@@ -34,13 +30,10 @@ engine and have some minimum requirements of processing power and RAM to
 run the most memory demanding tools.
 
 # Materials and Methods
-The workflow has been primarily carried out on a Linux server, but it can be
-used easily on a Windows or Mac OS machine as long as changes have been done to 
-appropriate functions/operations.
+The workflow has been primarily carried out on a Linux server, but it can be used easily on a Windows or Mac OS machine as long as changes have been done to  appropriate functions/operations.
 
 The workflow utilizes _[Bash](https://www.gnu.org/software/bash/)_ and 
-_[R](https://www.r-project.org/)_ 
-scripting for various operations.
+_[R](https://www.r-project.org/)_ scripting for various operations.
 For the application of the workflow, the following tools have been used:
 
 *  _[Rstudio](https://rstudio.com/)_ for R scripting,
@@ -68,7 +61,7 @@ Databases that have been used:
 
 # Workflow
 ## 1. Acquisition and Preprocessing of the small ncRNA sequences
-### Downloading the files for the generation of a Gene transfer format(gtf) 
+### i. Downloading the files for the generation of a Gene transfer format(gtf) 
 
 piRNA sequences for human were downloaded from piRNABank to enrich in piRNA sequences the 
 gtf file, and smallRNA genome coordinates(bed files) from RNAcentral have been acquired
@@ -93,7 +86,7 @@ wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_34/GRCh38.p
 
 pigz -d my_data/human_data/hg38/GRCh38.primary_assembly.genome.fa.gz 
 ```
-### Preprocessing of the piRNAbank file
+### ii. Preprocessing of the piRNAbank file
 
 The fasta file from piRNAbank has U character instead of T in the sequences, so changes have been made using [sed](https://www.gnu.org/software/sed/)
 ```{bash sed fasta}
@@ -102,7 +95,7 @@ sed 's/U/T/g' my_data/human_data/human_pir.txt > my_data/human_data/pirnaBank_hu
 # exit docker container
 exit
 ```
-### Run docker and Load libraries
+### iii. Run docker and Load libraries
 
 ```{bash Run docker bioc I}
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
@@ -119,7 +112,7 @@ suppressPackageStartupMessages({
   library("BSgenome.Hsapiens.UCSC.hg38")
 })
 ```
-### Remove duplicated sequences
+### iv. Remove duplicated sequences
 
 In the piRNABank fasta  duplicated sequences exist and are removed
 ```{r remove duplicates}
@@ -145,7 +138,7 @@ pirnaB_hg19 %>%
 # exit docker container
 exit
 ```
-### Align piRNA sequences to human genome
+### v. Align piRNA sequences to human genome
 
 Afterwards, alignment of piRNA sequences to the human genome utilizing STAR aligner has been performed.
 Then, samtools has been used to export the sequences in fasta format
