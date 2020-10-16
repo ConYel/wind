@@ -21,16 +21,16 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 
 # Introduction
 With the intent to annotate and quantify small-RNA sequence data (and in 
-particular piRNA) derived from Next-Generation Sequencing, a workflow has been implemented. For the generation of annotation files  and results widely used tools of alignment, annotation, quantification and differential expression algorithms have been utilized. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight modifications can be applied to all small-RNA categories of interest.
+particular piRNA) derived from Next-Generation Sequencing, a workflow has been implemented. For the generation of annotation files and results widely used tools of alignment, annotation, quantification and differential expression algorithms have been utilized. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight modifications can be applied to all small-RNA categories of interest.
 
-To make it more versatile  and reproducible, we adopted the _[containerization approach](https://www.docker.com/resources/what-container)_ as the software 
+To make it more versatile and reproducible, we adopted the _[containerization approach](https://www.docker.com/resources/what-container)_ as the software 
 deployment is fast, efficient, and potentially bug-free. It can be used in 
 various operating systems with only requirements the installation of the docker
 engine and have some minimum requirements of processing power and RAM to 
 run the most memory demanding tools.
 
 # Materials and Methods
-The workflow has been primarily carried out on a Linux server, but it can be used easily on a Windows or Mac OS machine as long as changes have been done to  appropriate functions/operations.
+The workflow has been primarily carried out on a Linux server, but it can be used easily on a Windows or Mac OS machine as long as changes have been done to appropriate functions/operations.
 
 The workflow utilizes _[Bash](https://www.gnu.org/software/bash/)_ and 
 _[R](https://www.r-project.org/)_ scripting for various operations.
@@ -101,7 +101,7 @@ exit
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
 
-# we prefer to work on Rstudio to perform everything on R otherwise  R on 
+# we prefer to work on Rstudio to perform everything on R otherwise R on 
 # bash could be used directly
 ```
 ```{r load the libraries I}
@@ -114,7 +114,7 @@ suppressPackageStartupMessages({
 ```
 ### iv. Remove duplicated sequences
 
-In the piRNABank fasta  duplicated sequences exist and are removed
+In the piRNABank fasta duplicated sequences exist and are removed
 ```{r remove duplicates}
 # import the fasta  ----
 pirnaB_hg19 <- Biostrings::readDNAStringSet("human_data/pirnaBank_human.fasta")
@@ -243,7 +243,7 @@ fasta_tr_hs_tbl %>%
   filter(duplicated(hg38)) %>%
   count(hg38,sort = TRUE) 
 
-###  duplicates between sequences and genomic locations(GRanges)----
+### duplicates between sequences and genomic locations(GRanges)----
 # make a tibble with all GR, seq and ids
 transcripts_GR <- transcripts_human %>% 
     as_granges() %>% 
@@ -273,7 +273,7 @@ piRNAbank_hg38_tib <- piRNAbank_hg38 %>%
     bpairs_piR = str_length(seq_piBn)) %>% 
   arrange(desc(bpairs_piR))
 ```
-### v. piRNAbank. make Genomic Ranges and remove duplicates from  hg38 
+### v. piRNAbank. make Genomic Ranges and remove duplicates from hg38 
 
 ```{r import piRNABank GRanges}
 # piRNABank. import the granges and change it -----
