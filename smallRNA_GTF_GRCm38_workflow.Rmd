@@ -21,10 +21,10 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 
 # Introduction
 With the intent to annotate and quantify small-RNA sequence data (and in 
-particular piRNA) derived from Next-Generation Sequencing, a workflow has been implemented. For the generation of annotation files  and results widely used tools of alignment, annotation, quantification and differential expression algorithms have been utilized. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight 
+particular piRNA) derived from Next-Generation Sequencing, a workflow has been implemented. For the generation of annotation files and results widely used tools of alignment, annotation, quantification and differential expression algorithms have been utilized. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight 
 modifications can be applied to all small-RNA categories of interest.
 
-To make it more versatile  and reproducible, we adopted the _[containerization approach](https://www.docker.com/resources/what-container)_ as the software 
+To make it more versatile and reproducible, we adopted the _[containerization approach](https://www.docker.com/resources/what-container)_ as the software 
 deployment is fast, efficient, and potentially bug-free. It can be used in 
 various operating systems with only requirements the installation of the docker
 engine and have some minimum requirements of processing power and RAM to 
@@ -101,7 +101,7 @@ exit
 ```{bash Run docker bioc I}
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
-# we prefer to work on Rstudio to perform everything on R otherwise  R on 
+# we prefer to work on Rstudio to perform everything on R otherwise R on 
 # bash can be used directly
 ```
 ```{r load the libraries I}
@@ -270,7 +270,7 @@ piRNAbank_mm10_tib <- piRNAbank_mm10 %>%
     bpairs_piR = str_length(seq_piBn)) %>% 
   arrange(desc(bpairs_piR))
 ```
-### v. piRNAbank. make Genomic Ranges and remove duplicates from  GRCm38 
+### v. piRNAbank. make Genomic Ranges and remove duplicates from GRCm38 
 
 ```{r import piRNABank GRanges}
 # piRNABank. import the granges and change it -----
