@@ -255,7 +255,7 @@ map2(fc_DES, salmon_DES, ~.x %>%
   write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/all_comparisons_voom_QW_TMM_salmon_fc_LFCs_{todate}.txt"))
 
 ```
-## 6. Cross the DE results with public results
+## 6. Compare the DE results with public results
 
 ```{r}
 #create the file with names and rnacentral ids -----
