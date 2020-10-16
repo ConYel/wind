@@ -1,6 +1,6 @@
 ---
 title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
-subtitle: "Computational workflow for the creation of Gene transfer format file with smallRNA sequences, GRCh38"
+subtitle: "Computational workflow for the creation of Gene transfer format file with small-RNA sequences, GRCh38"
 author: "Constantinos Yeles(Konstantinos Geles)"
 date: "`r format(Sys.Date(), '%a %b %d %Y')`"
 output:
