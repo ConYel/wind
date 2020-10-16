@@ -1,8 +1,8 @@
 ---
 title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
-subtitle: "Computational workflow for the preprocessing of selected samples from of TCGA regarding Breast Cancer"
+subtitle: "Computational workflow for the preprocessing of the GSE68246 dataset regarding Human Breast MCF-7 Cell Line with Cancer Stem Cell Properties"
 author: "Constantinos Yeles(Konstantinos Geles)"
-date: "`r format(Sys.time(), '%a %b %d %Y')`"
+date: "`r format(Sys.time(), '%a_%b_%d_%Y')`"
 output:
   pdf_document:
     toc: yes
@@ -20,45 +20,41 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ```
 ## The Data set
 
-We will work with a dataset from TCGA which is a subset of 18 samples from [TCGA-BRCA](https://doi.org/10.1038/ng.2764). In detail, we used 9 Primary Solid Tumors versus 9 Solid Tissue Normal matched samples.  
+We will work on a public dataset with GEO accession number: [GSE68246](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE68246),
+that it has been used in the publications: __[Phenotypic and microRNA transcriptomic profiling of the MDA-MB-231 spheroid-enriched CSCs with comparison of MCF-7 microRNA profiling dataset](https://pubmed.ncbi.nlm.nih.gov/28717596/)__ and __[MiRNA Transcriptome Profiling of Spheroid-Enriched Cells with Cancer Stem Cell Properties in Human Breast MCF-7 Cell Line](https://pubmed.ncbi.nlm.nih.gov/27019627/)__
+
 ## Data aqcuisition and preprocessing  
 
-### i. Downloading the samples  
+### i. Downloading the samples
 
-To obtain the data from TCGA we used a manifest with the selected samples and followed the instructions on [GDC website](https://docs.gdc.cancer.gov/Data_Transfer_Tool/Users_Guide/Preparing_for_Data_Download_and_Upload/)
+We use a script to download the fastq samples with samtools-kit that it is included in the docker with the name download_SRA.sh
 
-### ii. BAM to FASTQ
+Using the  __[SRA selector](https://www.ncbi.nlm.nih.gov/Traces/study/?acc=PRJNA282131)__ we download a file with the Accession List and rename the file
+to __GSE68246_samples.txt__
 
-The acquired files were in BAM format but in order to do the whole workflow we transformed them to fastq format.
-
-```{bash bam2fq}
+```{bash download samples}
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 
-mkdir my_data/fastq_files
-for file in my_data/bam_files/*.bam; 
-do regex="${file%%.bam}"; samp=`basename ${regex}`; 
-echo "Processing sample ${samp}";
-samtools bam2fq -@ 6  $file > my_data/fastq_files/${samp}.fastq
-echo "pigz sample ${samp}";
-pigz --best "my_data/fastq_files/${samp}.fastq"
-done
+# run the script to download the SRA
+./download_SRA.sh GSE124507_samples.txt 8
 ```
-### iii. Preprocessing of the samples
+
+### ii. Preprocessing of the samples
 We perform quality control(QC) on the fastq files to get basic information about the samples.
 We work with the __[Fastqc](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)__ tool to perform QC.
 
 ```{bash preprocessing}
-mkdir -p my_data/Breast_Cancer_TCGA/qc_first
+mkdir my_data/qc_first
 
-'fastqc' --threads 6 --outdir=my_data/Breast_Cancer_TCGA/qc_first/ my_data/myscratch/fastq_files/*.fastq.gz
+'fastqc' --threads 6 --outdir=my_data/qc_first/ my_data/downloaded_SRA/GSE_samples/*.fastq.gz
 
-for file in my_data/myscratch/fastq_files/*.fastq.gz; 
+for file in my_data/downloaded_SRA/GSE_samples/*.fastq.gz; 
 do ./spar_prepare/smrna_adapter_cut.sh $file 6; 
 done
 
-mkdir my_data/Breast_Cancer_TCGA/qc_after
+mkdir my_data/mouse_datasets/Torrela/complete_exp/qc_after
 
-'fastqc' --threads 6 --outdir=my_data/Breast_Cancer_TCGA/qc_after/ my_data/myscratch/fastq_files/*.trimmed.fastq.gz
+'fastqc' --threads 6 --outdir=my_data/qc_after/ my_data/downloaded_SRA/GSE_samples/*.trimmed.fastq.gz
 
 exit
 ```
@@ -74,52 +70,49 @@ docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
 # create the index
 salmon index -t ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.fa -i genome_transc_human/ncRNA_Central_piRNAB_hg38_index -k 15 -p 10
 
-mkdir my_data/smallRNA-breast-cancer/GSE129076/quants/
-
+mkdir my_data/smallRNA-breast-cancer/GSE68246/quants/
 # run the samples
 
 #!/bin/bash
  
-for fn in my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/fastq_files/*trimmed.fastq.gz;  
-do samp=`basename ${fn}`;  
-echo "Processing sample ${samp}";   
-salmon quant -i my_data/genome_
-transc_human/ncRNA_Central_piRNAB_hg38_index -l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 6 --validateMappings --writeMappings=my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/quants/${samp}.sam -o my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/quants/${samp}_quant;
+for fn in my_data/smallRNA-breast-cancer/GSE68246/GSE_samples/*trimmed.fastq.gz; 
+do samp=`basename ${fn}`; 
+echo "Processing sample ${samp}";  
+salmon quant -i my_data/genome_transc_human/ncRNA_Central_piRNAB_hg38_index -l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 6 --validateMappings --writeMappings=my_data/smallRNA-breast-cancer/GSE68246/quants/${samp}.sam -o my_data/smallRNA-breast-cancer/GSE68246/quants/${samp}_quant;
 done
 
 #save as bam files
-for file in my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/quants/*.sam;
+for file in my_data/smallRNA-breast-cancer/GSE68246/quants/*.sam;
 do 
 regex="${file%%.sam}";
-echo "Processing sample ${regex}";   
 echo samtools view -O bam -o ${regex}.bam -@ 6 ${file};
 done
 exit
 ```
-### Alignment and quantification of sequenced reads with STAR and Featurecounts
+### Alignment and quantification of sequenced reads with STAR and Featurecounts 
+
 We use the __[STAR](https://github.com/alexdobin/STAR)__ aligner and then
 perform quantification with featureCounts from __[Rsubread](https://www.bioconductor.org/packages/release/bioc/html/Rsubread.html)__ package.
-With the docker image that contains STAR and __[Samtools](https://www.htslib.org/)__
+With the a docker images that contains STAR and __[Samtools](https://www.htslib.org/)__
 we get sorted BAM files and use them for quantification / annotation for smallRNAs.
 
 ### ii. Alignment with STAR
+
 ```{bash STAR}
-# run docker
-docker run --rm -ti -v "$PWD":/home/my_data congelos/sncrna_workflow
+docker run --rm -ti -v "$PWD":/home/my_data congelos/spar
 
-# index generation
-STAR --runMode genomeGenerate --genomeDir my_data/human_data/GRCh38 --genomeFastaFiles my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa --runThreadN 6
+STAR --runMode genomeGenerate --genomeDir my_data/mouse_data/GRCh38 --genomeFastaFiles my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa --runThreadN 6
 
-mkdir my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/star_results
+mkdir my_data/smallRNA-breast-cancer/GSE68246/star_results
 
-# alignment
-for file in my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/fastq_files/*.trimmed.fastq.gz;  
-do samp=`basename ${file}`; 
-regex="${samp%%.trimmed.fastq.gz}"; 
-echo "Processing sample ${samp} start: $(date)"; 
-STAR --genomeDir my_data/genome_transc_human/human_data/GRCh38_2_7_4a --genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat --runThreadN 6 --alignIntronMax 1 --outSAMattributes NH HI NM MD --outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate --limitBAMsortRAM 40000000000 --outReadsUnmapped Fastx --outFilterMismatchNmax 1 --outFilterMatchNmin 14 --outFileNamePrefix "my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/star_results/${regex}_align/${regex}_";  echo "end:$(date)";
+for file in my_data/smallRNA-breast-cancer/GSE68246/GSE_samples/*.trimmed.fastq.gz; 
+do
+samp=`basename ${file}`;
+regex="${samp%%.trimmed.fastq.gz}";
+echo "Processing sample ${samp} start: $(date)";
+STAR --genomeDir my_data/genome_transc_human/human_data/GRCh38_2_7_4a --genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat --runThreadN 6 --alignIntronMax 1 --outSAMattributes NH HI NM MD --outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate --limitBAMsortRAM 40000000000 --outReadsUnmapped Fastx --outFilterMismatchNmax 1 --outFilterMatchNmin 14 --outFileNamePrefix "my_data/smallRNA-breast-cancer/GSE68246/star/${regex}_align/${regex}_"; 
+echo "end:$(date)";
 done
-
 exit
 ```
 
@@ -133,13 +126,13 @@ docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 -e USER=$UID co
 ```
 
 From here on we work in R using a browser. 
-we input http://localhost:8787/ on browser, 0 for username and 12345 for password.
+we input http://localhost:8787/ on browser and 0 for username and 12345 for password.
 
-### iv. __[FeatureCounts](http://subread.sourceforge.net/)__
-```{r FeatureCounts}
+### iv. __[featureCounts](http://subread.sourceforge.net/)__
+```{r featureCounts}
 library(Rsubread)
 library(tidyverse)
-list.BAM <- list.files(path = "Breast_Cancer_TCGA/star_results", 
+list.BAM <- list.files(path = "GSE68246/star_results", 
                        pattern = ".bam$", 
                        recursive = TRUE, 
                        full.names = T)
@@ -152,7 +145,7 @@ fc <- featureCounts(files = list.BAM,
                     isGTFAnnotationFile = TRUE,
                     GTF.featureType = "exon",
                     GTF.attrType.extra = c("gene_type", "sRNA_id", "seq_RNA"),
-                    nthreads = 8,
+                    nthreads = 6,
                     useMetaFeatures = TRUE,
                     allowMultiOverlap = TRUE,
                     minOverlap = 10,
@@ -161,12 +154,11 @@ fc <- featureCounts(files = list.BAM,
                     strandSpecific = 0,
                     verbose = TRUE,
                     reportReads = "BAM",
-                    reportReadsPath = "Breast_Cancer_TCGA/star_results/") 
-fc %>% write_rds(str_glue("Breast_Cancer_TCGA/feature_counts_BRCA_TCGA_{todate}.rds"))
+                    reportReadsPath = "GSE68246/star_results") 
+fc %>% write_rds(str_glue("GSE68246/feature_counts_GSE68246_{todate}.rds"))
 ```
 
-Next we will follow the workflow of data_exploration_salmon_fc.RMD
-
+Next we will follow the workflow of data_exploration_salmon_fc
 ## R Session Info
 ```{r session Info}
 sessionInfo()
@@ -208,7 +200,7 @@ loaded via a namespace (and not attached):
 [45] munsell_0.5.0    broom_0.5.5      crayon_1.3.4  
 ```
 ## We work on : 
-```{bash versions, eval = FALSE}
+```{bash versions}
 [root@localhost GSE124507_brain_project]# cat /etc/*-release
 
 CentOS Linux release 7.8.2003 (Core)
