@@ -146,25 +146,25 @@ docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 # create index
 STAR --runMode genomeGenerate --genomeDir my_data/mouse_data/GRCm38 --genomeFastaFiles my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa --runThreadN 6
 
-mkdir my_data/mouse_data/piRNABank_mouse_m10
+mkdir my_data/mouse_data/piRNABank_mouse_mm10
 
 # align the piRNABank sequences
 STAR --genomeDir my_data/mouse_data/GRCm38 --genomeLoad LoadAndKeep \
 --readFilesIn "my_data/mouse_data/pirnaB_mm8_removed_duplicates.fa"  \
 --runThreadN 6 --alignIntronMax 0 --outSAMattributes NH HI NM MD \
 --outFilterMultimapNmax 100 --outReadsUnmapped Fastx --outFilterMismatchNmax 0 \
---outFilterMatchNmin 16 --outFileNamePrefix "my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_"
+--outFilterMatchNmin 16 --outFileNamePrefix "my_data/mouse_data/piRNABank_mouse_mm10/piBnk_mm10_"
 
 # sort the sam file
-samtools sort -O bam -o my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_sorted.bam -@ 6 \
-my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_Aligned.out.sam
+samtools sort -O bam -o my_data/mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.bam -@ 6 \
+my_data/mouse_data/piRNABank_mouse_mm10/piBnk_mm10_Aligned.out.sam
 
 # BAM to fasta format
 samtools fasta -F 4 -@ 8 \
-my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_sorted.bam > my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_sorted.fasta
+my_data/mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.bam > my_data/mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.fasta
 
 # BAM to bed format
-bedtools bamtobed < my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_sorted.bam > my_data/mouse_data/piRNABank_mouse_m10/piBnk_m10_sorted.bed
+bedtools bamtobed < my_data/mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.bam > my_data/mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.bed
 
 exit
 ```
@@ -182,4 +182,679 @@ suppressPackageStartupMessages({
   library('plyranges')
   library("BSgenome.Mmusculus.UCSC.mm10")
 })
+```
+### i. RNAcentral. import RNAcentral file 
+
+```{r import RNAcentral}
+sRNA <- read_bed("mouse_data/mus_musculus.GRCm38.bed.gz") %>% 
+  select("sRNA_id" = name, "gene_type" = NA.1, "source" = NA.2) %>% 
+  mutate(type = "exon")
+
+sInfo <- Seqinfo(genome="mm10")
+seqlevels(sInfo) <- seqlevels(sRNA)
+seqinfo(sRNA)<- sInfo
+```
+### ii. RNAcentral. filtering for sequences smaller than 100 bps
+
+```{r filter 100bp}
+tr_sRNA <- sRNA %>% 
+  as_tibble() %>% 
+  filter(width < 100) %>% 
+  mutate(sRNA_id = str_remove(sRNA_id,"_10090")) %>% 
+  as_granges() %>% 
+  # keep info about the standard chromosomes
+  keepStandardChromosomes(pruning.mode = "coarse") %>% # [962.711] -> [947.408]
+  # remove the duplicated entries from RNAcentral
+  as_tibble() %>% 
+  unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
+  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRanges [947.408] -> [929.158]
+  separate(col = seq_s,into = c("seqnames","start","end","width","strand"),
+    sep = "_") %>% 
+  mutate(start = as.numeric(start),
+    end = as.numeric(end),
+    width = as.numeric(width)) %>% 
+  as_granges()
+
+biotypes <- tr_sRNA %>% 
+  as_tibble() %>% 
+  select(sRNA_id,gene_type) %>% 
+  distinct(sRNA_id, .keep_all = T)
+```
+### iii. RNAcentral. keep sequence information
+
+```{r keep seq info}
+transcripts_mouse <- Views(BSgenome.Mmusculus.UCSC.mm10, tr_sRNA)
+
+# search for duplicated sequences ----
+fasta_tr_ms <- DNAStringSet(transcripts_mouse)
+names(fasta_tr_ms) <- mcols(transcripts_mouse)$sRNA_id
+fasta_tr_ms <- fasta_tr_ms[sort(fasta_tr_ms@ranges@NAMES)]
+
+fasta_tr_ms_tbl <- fasta_tr_ms  %>% 
+  as.character() %>% 
+  enframe(name = "tr_mm10" ,value = "mm10") %>% 
+  left_join(biotypes, by = c("tr_mm10" = "sRNA_id"))
+
+fasta_tr_ms_tbl %>% 
+  distinct(tr_mm10, mm10, gene_type, .keep_all = TRUE) %>% 
+  filter(duplicated(mm10)) %>%
+  count(mm10,sort = TRUE) 
+
+#  duplicates between sequences and genomic locations(GRanges)-----
+## make a tibble with all GR, seq and ids
+transcripts_GR <- transcripts_mouse %>% 
+    as_granges() %>% 
+    as_tibble() %>% 
+    unite(col = "seq_RCent", seqnames:strand, sep = "_") 
+
+## find unique pairs of seq and GR
+
+uniq_seq <- transcripts_GR  %>% 
+  distinct(dna, .keep_all = TRUE) %>% 
+  arrange(dna) %>% 
+  mutate(sRNA_id2 = str_c(sRNA_id,"_GR_",seq_RCent)) %>% 
+  select(dna,sRNA_id2)
+
+transcripts_GR <- transcripts_GR %>% 
+  left_join(uniq_seq)
+```
+### iv. piRNABank. import the aligned to genome fasta
+
+```{r import piRNABank}
+piRNAbank_mm10 <- Biostrings::readDNAStringSet("mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.fasta")
+piRNAbank_mm10_tib <- piRNAbank_mm10 %>%
+  as.character() %>% 
+  enframe(value = "seq_piBn") %>% 
+  mutate(sRNA_type ="piRNA",
+    bpairs_piR = str_length(seq_piBn)) %>% 
+  arrange(desc(bpairs_piR))
+```
+### v. piRNAbank. make Genomic Ranges and remove duplicates from  GRCm38 
+
+```{r import piRNABank GRanges}
+# piRNABank. import the granges and change it -----
+  piRNAbank_mm10_ranges <- read_bed("mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.bed") %>% 
+  as_tibble() %>% 
+  arrange(desc(width)) %>% 
+  filter(width < 100) %>% 
+  as_granges() %>% 
+  keepStandardChromosomes(pruning.mode = "coarse")
+
+transcripts_pi_mm10 <- Views(BSgenome.Mmusculus.UCSC.mm10, piRNAbank_mm10_ranges) %>%
+  as_granges() %>%
+  keepStandardChromosomes(pruning.mode = "coarse") %>% 
+  as_tibble()
+
+# we need to apply a second width filter at 68 
+# as we know that piRNAs are ~32 base pairs
+transcripts_pi_mm10 <- transcripts_pi_mm10 %>% filter(width < 68)
+transcripts_pi_mm10 %>% count(name) %>% nrow #> 39380 piRNAs from piRNABANK
+
+# checking sequences of alignments with lower length
+sequen_pi_false <- transcripts_pi_mm10 %>% 
+  as_tibble() %>% 
+  left_join(piRNAbank_mm10_tib) %>% 
+  arrange(desc(width)) %>% 
+  mutate(sequences_true = (dna == seq_piBn)) %>% 
+  filter(sequences_true == FALSE) %>% 
+  unite(col = "seq_s",seqnames:strand, sep = "_") 
+
+# piRNABank. removing duplicated GR ----
+piRNAbank_mm10_ranges %>% 
+  as_tibble() %>%
+  unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
+  count(seq_s) %>% 
+  filter(n > 1) %>% 
+  .$seq_s %>% 
+  map(~sequen_pi_false %>% 
+  filter(seq_s == .x)) %>% 
+  bind_rows()
+
+transcripts_pi_mm10_clean <- transcripts_pi_mm10 %>% 
+  as_tibble() %>% 
+  left_join(piRNAbank_mm10_tib) %>% 
+  arrange(desc(width)) %>% 
+  mutate(sequences_true = (dna == seq_piBn)) %>% 
+  filter(sequences_true == TRUE) %>% 
+  select(-score, -seq_piBn, -bpairs_piR, -sequences_true) %>% 
+  unite(col = "seq_piBNK",seqnames:strand, sep = "_")
+
+transcripts_pi_mm10_clean %>% count(name) %>% nrow #> 39380 piRNAs final piRNABANK
+#> 54,014 Genomic ranges
+
+# sanity checks ----
+concated_mm10_piBAnk %>% 
+  filter(!duplicated(dna)) %>% 
+  select(sRNA_id, seq_id) %>% 
+  arrange(sRNA_id)
+
+tr_test <- transcripts_mouse %>% as_granges()
+
+concated_mm10_piBAnk %>% 
+  filter(!duplicated(dna), !is.na(name))  %>% 
+  select(seq_RCent,seq_id,sRNA_id)
+
+transcripts_pi_mm10_clean %>%  filter(name == "mmu_piR_013613_DQ691404")
+
+tr_test %>% filter(sRNA_id == "URS00004A4FA0") %>% 
+  select(gene_type,dna) %>% arrange(seqnames)
+
+## checking for the duplicated sequences
+concated_mm10_piBAnk %>% 
+  filter(duplicated(dna)) %>%
+  distinct(dna, .keep_all = T) %>% 
+  select(seq_RCent,seq_id)
+
+concated_mm10_piBAnk %>% filter(sRNA_id == "URS00003AC5A0") 
+transcripts_pi_mm10_clean %>%  filter(name == "mmu_piR_014163_DQ692225")
+tr_test %>% filter(sRNA_id == "URS00003AC5A0")
+```
+### vi. RNAcentral. + piRNABank. make annotation tibble
+
+```{r annotation tibble}
+mm10_piBAnk_RCent <- transcripts_GR %>% 
+  left_join(piRNAbank_mm10_tib, by = c("dna" = "seq_piBn"))
+# check gene_types
+mm10_piBAnk_RCent %>% 
+  filter(is.na(gene_type))
+mm10_piBAnk_RCent %>% 
+  filter(is.na(name)) %>% 
+  count(gene_type) 
+mm10_piBAnk_RCent %>% 
+  filter(!is.na(name)) %>% 
+  count(gene_type) 
+mm10_piBAnk_RCent %>%
+  filter(!is.na(name)) %>%
+  filter(!gene_type == "piRNA") %>% 
+  count(gene_type)
+
+mm10_piBAnk_RCent%>%
+  filter(gene_type != "piRNA",sRNA_type == "piRNA") %>% 
+  count(gene_type)
+# in case that in piRNAbank a pirna is the same but with different type in RNAcentral
+# we will keep the gene type of RNAcentral 
+concated_mm10_piBAnk <- mm10_piBAnk_RCent  %>% 
+  mutate(
+    seq_id = case_when(
+      gene_type == "piRNA" & sRNA_type == "piRNA" ~ name,
+      gene_type != "piRNA" & sRNA_type == "piRNA" ~ str_c(sRNA_id2, "_", name),
+      is.na(sRNA_type) ~ sRNA_id2
+    ),
+    source = case_when(
+      sRNA_type == "piRNA" ~ str_c(source, ",piRNABank"),
+      is.na(sRNA_type) ~ source,
+      
+    )
+  )
+
+concated_mm10_piBAnk %>%
+  filter(!is.na(name)) %>%
+  filter(!gene_type == "piRNA") %>% 
+  count(gene_type)
+# sanity checks ----
+## checking for the NA values, should be only true
+(concated_mm10_piBAnk %>% 
+    filter(is.na(name)) %>% .$sRNA_id2 == 
+    concated_mm10_piBAnk %>% 
+    filter(is.na(name)) %>% .$seq_id
+  ) %>% table
+
+## checking for the miRNA values, should be 16 miRNA false
+ (concated_mm10_piBAnk %>% filter(gene_type == "miRNA") %>% .$sRNA_id2 == 
+     concated_mm10_piBAnk %>% filter(gene_type == "miRNA") %>% .$seq_id
+   ) %>% table
+
+## function for all gene_types
+fun_unm <- function(x){
+  (concated_mm10_piBAnk %>% 
+      filter(gene_type == x) %>% 
+      .$sRNA_id2 == 
+      concated_mm10_piBAnk %>% 
+      filter(gene_type == x) %>% 
+      .$seq_id
+    ) %>% table
+}
+## checking for all gene_types, should be only true except piRNAs, miRNA and misc_RNA
+concated_mm10_piBAnk %>% 
+  count(gene_type) %>% 
+  .$gene_type %>% set_names(.) %>%  
+  map(~fun_unm(.x))
+
+## checking for the piRNA values
+is.na(concated_mm10_piBAnk$seq_id) %>% table
+
+## checking for duplicates
+concated_mm10_piBAnk %>% 
+  filter(duplicated(seq_id)) %>% 
+  arrange(name)
+
+concated_mm10_piBAnk %>% 
+  filter(duplicated(name),!is.na(name)) %>% 
+  arrange(name)
+
+concated_mm10_piBAnk %>% 
+  filter(duplicated(sRNA_id2),!is.na(sRNA_id2)) %>% 
+  arrange(name)
+
+dupl_seqs <- concated_mm10_piBAnk %>% 
+  filter(duplicated(dna)) %>% 
+  arrange(name)
+
+fasta_tr_ms_tbl %>% 
+  filter(mm10 %in% dupl_seqs$dna)
+
+```
+### vii. RNAcentral + piRNABank. generation of GRanges
+
+```{r GRanges generation}
+concated_mm10_piBAnk  # df with combined sequences piRNAbank+RNAcentral
+transcripts_pi_mm10_clean # has all alignments from piRNAbank 
+tr_sRNA # has the ranges with less than 100 bp from RNAcentral
+
+c_piBNK_RCent <- concated_mm10_piBAnk %>%
+  full_join(transcripts_pi_mm10_clean, by = c("dna", 
+    "name", "sRNA_type", "seq_RCent" =  "seq_piBNK")) %>% 
+  select(seq_RCent, 
+    sRNA_id, 
+    name, 
+    seq_id, 
+    gene_type, 
+    sRNA_type, 
+    everything()) %>%  
+  mutate(source = 
+      case_when(
+        is.na(source) ~ "piRNA_BANK",
+        TRUE ~ source),
+    gene_type = 
+      case_when(
+        is.na(gene_type) ~ sRNA_type,
+        TRUE ~ gene_type),
+    seq_id =
+      case_when(
+        is.na(seq_id) ~ name,
+        TRUE ~ seq_id),
+    type =
+      case_when(
+        is.na(type) ~ "exon",
+        TRUE ~ type)
+  ) 
+      
+
+c_piBNK_RCent %>% count(sRNA_id, sort = T)
+
+c_piBNK_RCent %>% count(name, sort = T)
+
+c_piBNK_RCent %>% count(seq_id, sort = T)
+
+c_piBNK_RCent %>% count(gene_type, sort = T)
+
+c_piBNK_RCent %>% count(source, sort = T)
+
+c_piBNK_RCent %>% count(type, sort = T)
+
+c_piBNK_RCent %>% count(dna, sort = T) 
+
+c_piBNK_RCent %>% count(sRNA_id2, sort = T)
+
+c_piBNK_RCent %>% count(bpairs_piR, sort = T)
+
+# final Genomic ranges -----
+c_piBNK_RCent_GR <- c_piBNK_RCent %>% 
+  select(-name, -sRNA_type, -bpairs_piR) %>% 
+  rename( dna = "seq_RNA") %>% 
+  separate(col = seq_RCent,into = c("seqnames",
+    "start","end","width","strand"), sep = "_") %>% 
+  mutate(start = as.numeric(start),
+    end = as.numeric(end),
+    width = as.numeric(width)) %>% 
+  as_granges
+
+c_piBNK_RCent_GR %>%
+  as_tibble() %>% 
+  arrange(desc(width)) %>% 
+  count(width, gene_type, sort =T) %>% 
+  write_tsv("mouse_data/piRNAbank_mouse_RNACentral_bp_info.txt")
+
+# possible "clusters" of piRNA -----
+c_piBNK_RCent_GR %>%
+  filter(gene_type == "piRNA") %>% 
+  plyranges::reduce_ranges_directed() %>% 
+  as_tibble() %>% 
+  filter(width > 40) %>% 
+  arrange(desc(width)) %>% 
+  count(width) %>% view
+  
+# testing of sequences-----
+piRNAbank_rCentral_seqs <- Views(BSgenome.Mmusculus.UCSC.mm10, c_piBNK_RCent_GR)
+
+piRNAbank_rCentral_seqs %>%
+  as_granges() %>% 
+  as_tibble() %>% mutate( is_it_TR = (seq_RNA == dna)) %>% 
+  filter(is_it_TR == FALSE)# should be 0
+
+# final objects to export-----
+piRNAbank_rCentral_fasta <- DNAStringSet(piRNAbank_rCentral_seqs)
+names(piRNAbank_rCentral_fasta) <- mcols(piRNAbank_rCentral_seqs)$seq_id  
+
+piRNAbank_rCentral_fasta <- piRNAbank_rCentral_fasta[!duplicated(piRNAbank_rCentral_fasta)]
+```
+## 3. Save the results to fasta and gtf format
+
+```{r export and save res}
+piRNAbank_rCentral_fasta %>% 
+  Biostrings::writeXStringSet("mouse_data/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_mm10.fa")
+
+gtf_piB_RCentr <- piRNAbank_rCentral_seqs %>% 
+  as_granges() %>% 
+  as_tibble() %>% 
+  dplyr::rename("gene_id" = seq_id) %>% 
+  select(-dna) %>% 
+  as_granges()
+
+sInfo <- Seqinfo(genome="mm10")
+seqlevels(sInfo) <- seqlevels(gtf_piB_RCentr)
+seqinfo(gtf_piB_RCentr)<- sInfo
+
+gtf_piB_RCentr %>% 
+  as_granges() %>% 
+  write_gff2("mouse_data/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_mm10.gtf")
+
+# to import use:
+# fasta_tr_hg38 <- Biostrings::readDNAStringSet("mouse_data/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_mm10.fa")
+# gtf_piB_RCentr <- read_gff2("mouse_data/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_mm10.gtf")
+```
+
+Following this workflow the files for annotation and quantification of small-RNA samples have been prepared. 
+Afterwards, the steps on the _[GSM3535476_workflow.pdf](https://github.com/ConYel/genome_transc_human/blob/master/GSM3535476_workflow.pdf)_ could be followed to perform pre-processing of the samples, alignment, quantification and calculation of transcript abundances.
+
+## 4. Provide extra information regarding genomic locations, genes, transcripts, for the gtf
+### Load libraries
+
+```{r bumphunter libraries}
+suppressPackageStartupMessages({
+library('TxDb.Mmusculus.UCSC.mm10.knownGene')
+library('org.Mm.eg.db')
+library('bumphunter')
+library('BiocParallel')
+library('stats')   
+})
+```
+### import regions of transcripts
+
+```{r transcript regions bumphunter}
+genes <- annotateTranscripts(TxDb.Mmusculus.UCSC.mm10.knownGene, annotation="org.Mm.eg.db") %>% 
+  keepStandardChromosomes(pruning.mode="coarse") %>% arrange(seqnames)
+
+piRNAbank_rCentral_gtf <- read_gff2("mouse_data/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_mm10.gtf")
+
+identical(genes %>% seqlevels(), piRNAbank_rCentral_gtf %>% seqlevels())
+
+piRNAbank_rCentral_gtf %>% length()
+
+map(piRNAbank_rCentral_gtf %>% seqlevels() %>% purrr::set_names(),
+    ~piRNAbank_rCentral_gtf %>% 
+        filter(seqnames == .x) %>% 
+        length()) %>% bind_rows() %>%  
+  pivot_longer(cols = chr1:chrM) %>% 
+  arrange(desc(value))
+# we will parallelize per chr.
+
+ if(.Platform$OS.type == "windows") {
+mt_param <- SnowParam()
+ } else{
+mt_param <- MulticoreParam()
+ }
+# we will work with 10 workers 
+mt_param <- MulticoreParam(workers = 8)
+
+# simple function which takes lists of Granges and the chromosome 
+# name to select from each list
+matchGenes_fun <- function(our_Grs, genes_GRs){
+  suppressPackageStartupMessages({
+    library('dplyr')
+    library('bumphunter')
+  })
+  message("working on matchGenes")
+  matchGenes(our_Grs, genes_GRs, 
+    type = "any", promoterDist = 2500, 
+    skipExons = FALSE, verbose = TRUE) %>% as_tibble()
+}
+
+genes_chr <- map(genes %>% seqlevels() %>% purrr::set_names(), 
+  ~genes %>% filter(seqnames == .x))
+
+gen_test <- genes_chr[c("chrM","chrY")]
+
+piR_chr <- map(piRNAbank_rCentral_gtf %>% 
+    seqlevels() %>% 
+    purrr::set_names(), ~piRNAbank_rCentral_gtf %>% 
+        filter(seqnames == .x))
+
+piR_test <- piR_chr[c("chrM","chrY")]
+
+res_chr <- bpmapply(matchGenes_fun,
+  piR_chr, genes_chr, USE.NAMES=TRUE, SIMPLIFY = FALSE,
+    BPREDO=list(), BPPARAM = mt_param) 
+
+res_chr <- bind_rows(res_chr) %>% 
+  bind_cols(as_tibble(piRNAbank_rCentral_gtf)) %>% 
+  dplyr::select(name:subjectHits, gene_id, 
+    gene_type, sRNA_id, source, seq_RNA) %>% 
+  write_tsv("mouse_data/gene_regions_piRNAbank_rCentral.txt")
+``` 
+## 5. Find multimapping piRNAs
+
+```{r multimapping piRNAs}
+multi_test <- piRNAbank_rCentral_gtf %>%
+    plyranges::select(gene_id, seq_RNA, gene_type) %>% join_overlap_inner_directed(plyranges::select(piRNAbank_rCentral_gtf, gene_id, gene_type, seq_RNA)) %>% 
+  arrange(seqnames)
+
+multi_test %>% 
+  filter(gene_type.x == "piRNA", 
+    !gene_id.x == gene_id.y ) %>%
+  as_tibble() %>% 
+  count(gene_type.x, gene_type.y, sort = T) %>% 
+  write_tsv("genomic_locations_stats_multi.txt")
+
+piRNAbank_rCentral_gtf %>% 
+  filter(gene_type == "piRNA") %>% 
+  plyranges::select(-c(score, phase, source, type)) %>% 
+  as_tibble() %>% 
+  unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
+  count(gene_id, sort = T) %>% write_tsv("genomic_locations_stats_multi_piRNA.txt")
+```
+## 6. Information about inner-join and  anti-join between the two databases
+
+```{r}
+c_piBNK_RCent %>% distinct(seq_id, .keep_all = T)
+
+c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(is.na(sRNA_type),gene_type == "piRNA")
+
+c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(!is.na(sRNA_type),is.na(sRNA_id),gene_type == "piRNA")
+
+c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(!is.na(name),!is.na(sRNA_id), gene_type== "piRNA")
+```
+
+## 7. Find which smallRNAs inside Trasposable Elements
+we have downloaded a gtf file with the information about genomic regions of 
+Transposable Elements for human genome: http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/
+more precisely: GRCh38_GENCODE_rmsk_TE.gtf.gz	
+
+http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/GRCh38_GENCODE_rmsk_TE.gtf.gz
+
+```{r Trasposable Elements annotation}
+TEs <- read_gff2("GRCh38_GENCODE_rmsk_TE.gtf.gz") %>% 
+  plyranges::select("TE_gene_id" = gene_id, "TE_transcript_id" = transcript_id, 
+   "TE_family_id" = family_id, "TE_class_id" = class_id) %>% 
+  keepStandardChromosomes(pruning.mode = "coarse") %>% 
+  arrange(seqnames) 
+
+piRNAbank_rCentral_gtf %>% 
+  plyranges::select(gene_id, sRNA_id,gene_type, seq_RNA) %>% 
+  find_overlaps_directed(TEs) %>% 
+  write_gff2("TEs_piRNAbank_rCentral.gtf")
+
+piRNAbank_rCentral_gtf %>% 
+  join_overlap_left_directed( piRNAbank_rCentral_gtf %>% 
+  find_overlaps_directed(TEs)) %>% length()
+
+piRNAbank_rCentral_gtf %>% 
+  find_overlaps_directed(TEs) %>% 
+  plyranges::reduce_ranges_directed() %>% length()
+
+```
+
+## 8. Optional if there are spike-ins sequences 
+```{r adding spikes-ins in genome and gtf}
+spike <- read_tsv("spike-ins.txt", col_names = c("names", "seq_RNA"))
+fasta_gen_hg38 <- Biostrings::readDNAStringSet("human_data/hg38/GRCh38.primary_assembly.genome.fa")
+
+spikes_Fasta <- spike$seq_RNA %>%
+  DNAStringSet(start = rep(1,nrow(spike)), end = str_length(spike$seq_RNA)) %>% 
+  setNames(spike$names)  
+
+DNAStringSetList(spikes_Fasta,fasta_gen_hg38) %>% 
+  unlist() %>% 
+  Biostrings::writeXStringSet("ncRNA_genome_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa")
+
+fasta_tr_hg38 <- Biostrings::readDNAStringSet("ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.fa")
+
+DNAStringSetList(spikes_Fasta,fasta_tr_hg38) %>% 
+  unlist() %>% 
+  Biostrings::writeXStringSet("ncRNA_transcripts_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa")
+
+gtf_piB_RCentr_spikes <- spike %>% 
+  dplyr::rename("seqnames" = names) %>% 
+  mutate(
+  start = 1,
+  end = str_length(seq_RNA),
+  width = str_length(seq_RNA),
+  strand = "+",
+  gene_id = seqnames,
+  type = "exon",
+  source = "spike_in",
+  gene_type = "spike_in"
+) %>% 
+  as_granges() %>% 
+  bind_ranges(piRNAbank_rCentral_gtf) %>% 
+  write_gff2("ncRNA_transcripts_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.gtf")
+
+# file for histograms of piRNAs
+gtf_piB_RCentr_spikes %>% 
+  as_tibble() %>%
+  filter(gene_type %in% c("piRNA","spike_in")) %>% 
+  plyranges::select(gene_id, seq_RNA, gene_type) %>%
+  distinct(seq_RNA , .keep_all = TRUE) %>% 
+  write_tsv("piRNAs_hist.txt")
+```
+## indexes for STAR and Salmon 
+```{bash spike-ins indexes}
+docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
+
+STAR --runMode genomeGenerate --genomeDir my_data/mouse_data/GRCm38 --genomeFastaFiles my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa --runThreadN 7
+
+# following the instructions for salmon decoy aware indexing
+# https://combine-lab.github.io/alevin-tutorial/2019/selective-alignment/
+grep "^>" <my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa | cut -d " " -f 1 > my_data/mouse_data/decoys.txt
+
+sed -i.bak -e 's/>//g' my_data/decoys.txt
+
+cat my_data/ncRNA_transcripts_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa my_data/ncRNA_genome_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa > gentrome_piRNAbank_Central.fa
+
+exit
+# run the docker
+docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
+# create the index
+## *remove manually the spike-ins chrs from decoys
+salmon index -t my_data/mouse_data/gentrome_GRCm38_piRNAbank_Central.fa -d my_data/mouse_data/decoys.txt -i my_data/mouse_data/ncRNA_Central_piRNAB_mm10_index -k 15 -p 15
+exit
+```
+## 9.  Cross the small non-coding RNA IDs from RNAcentral with the names of other databases
+```{r}
+# download the RNAcentral file that has all IDs and the names----
+library(tidyverse)
+library(vroom)
+#fs::dir_ls(glob = "ftp://ftp.ebi.ac.uk/pub/databases/RNAcentral/current_release/id_mapping/database_mappings/*.tsv")
+
+## for human NCBI_taxon_id:9606 ----
+rnacentral_ids <- data.table::fread("../genome_transc_human/id_mapping.tsv.gz", 
+                        col.names = c("RNAcentral_id", 
+                                      "Database",
+                                      "external_id",
+                                      "NCBI_taxon_id",
+                                      "RNA_type",
+                                      "gene_name")) %>% 
+  filter(NCBI_taxon_id == "9606") %>%
+  select(-NCBI_taxon_id) %>%
+  arrange(RNAcentral_id, external_id,desc(gene_name)) %>% 
+  distinct(RNAcentral_id, external_id, gene_name, .keep_all = T) %>%
+  unite(col = ext_id_gene_name,c("external_id", "gene_name"), sep = "_gn_") %>% 
+  pivot_wider(names_from = Database, 
+              values_from = ext_id_gene_name, 
+              values_fn = toString) %>% 
+  write_tsv("../genome_transc_human/rnacentral_ids_hg38.txt")
+
+```
+## 10. piRNA targets prediction
+Download the 3', 5' and CDS fasta files from [BioMart](http://www.ensembl.org/biomart/martview/4f27740c6690896f18b1bb0fb24011cd) for the genome of interest.
+We rename the files to: "UTR3.fasta", "UTR5.fasta", "CDS.fasta" 
+- first we have to make the indexes for bowtie
+```{bash run the bowtie docker}
+mkdir UTR3 CDS UTR5
+docker run --rm -ti -v $(pwd):/home/my_data  congelos/bowtie_bowtie2
+#UTR3 index
+bowtie-build -f -o 3 --threads 8 my_data/UTR3_hg38.fasta my_data/UTR3/UTR3_hg38
+
+#UTR5 index
+bowtie-build -f -o 3 --threads 8 my_data/UTR5_hg38.fasta my_data/UTR5/UTR5_hg38
+
+#CDS index
+bowtie-build -f -o 3 --threads 8 my_data/CDS_hg38.fasta my_data/CDS/CDS_hg38
+
+# UTR3 run
+bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/UTR3/UTR_hg38 -S -f \
+my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \ 
+samtools view -F 4 -@ 2 -  > my_data/res_UTR3.txt
+
+# UTR5 run
+bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/UTR5/UTR5_hg38 -S -f \
+my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \
+samtools view -F 4 -@ 2 -  > my_data/res_UTR5.txt
+
+# CDS run
+bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/CDS/CDS_hg38 -S -f \
+my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \
+samtools view -F 4 -@ 2 -  > my_data/res_CDS_hg38.txt
+```
+### i. make a fasta with only piRNA sequences
+```{r}
+library(tidyverse)
+ncRNA_gtf <- plyranges::read_gff2("ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
+  filter(gene_type == "piRNA") %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = T) %>% 
+  select(gene_id, seq_RNA) %>% 
+  column_to_rownames("gene_id")
+
+piRNA_fa_hg38 <- Biostrings::DNAStringSet(ncRNA_gtf$seq_RNA)
+names(piRNA_fa_hg38) <- rownames(ncRNA_gtf)
+piRNA_fa_hg38 %>% 
+Biostrings::writeXStringSet("piRNAs_for_target_pred_Central_piRNAbank.fa")
+```
+### ii. make a dataframe with all predicted gene targets
+```{r}
+# Load the targets
+targets <- list.files(path = "human_data/target_prediction_indexes_hg38_UTR3_5_CDS", pattern = ".UTR.+txt|CDS.+txt",full.names = T) %>% 
+  vroom(col_names = F, id = "file", col_select = c("file", "X1", "X3")) %>%
+  mutate(file = file %>% str_remove(".+/") %>% str_remove("res_")%>% str_remove("_hg.+")) %>% 
+  separate(X3,c("Gene_stable_ID",
+                "Gene_stable_ID_version",
+                "Transcript_stable_ID",
+                "Transcript_stable_ID_version",
+                "Target_gene_name",
+                "Target_gene_type"), 
+           sep = "\\|") %>% 
+  dplyr::rename(piRNA_id = X1) %>% 
+  arrange(Target_gene_name) %>% 
+  write_tsv("human_data/piRNA_predicted_Targets.txt")
 ```

@@ -191,6 +191,7 @@ suppressPackageStartupMessages({
 sRNA <- read_bed("human_data/homo_sapiens.GRCh38.bed.gz") %>% 
   select("sRNA_id" = name, "gene_type" = NA.1, "source" = NA.2) %>% 
   mutate(type = "exon")
+
 sInfo <- Seqinfo(genome="hg38")
 seqlevels(sInfo) <- seqlevels(sRNA)
 seqinfo(sRNA)<- sInfo
@@ -262,7 +263,7 @@ transcripts_GR <- transcripts_GR %>%
 ```
 ### iv. piRNABank. import the aligned to genome fasta
 
-```{r import piRNABank.}
+```{r import piRNABank}
 piRNAbank_hg38 <- Biostrings::readDNAStringSet("piRNABank_human_hg38/piBnk38_sorted.fasta")
 
 piRNAbank_hg38_tib <- piRNAbank_hg38 %>%
@@ -274,7 +275,7 @@ piRNAbank_hg38_tib <- piRNAbank_hg38 %>%
 ```
 ### v. piRNAbank. make Genomic Ranges and remove duplicates from  hg38 
 
-```{r import piRNABank granges}
+```{r import piRNABank GRanges}
 # piRNABank. import the granges and change it -----
   piRNAbank_hg38_ranges <- read_bed("piRNABank_human_hg38/piBnk38_sorted.bed") %>% 
   as_tibble() %>% 
@@ -549,7 +550,7 @@ gtf_piB_RCentr %>%
 ```
 
 Following this workflow the files for annotation and quantification of smallRNA samples have been prepared. 
-Afterwards, the steps on the _[GSM3535476_workflow.pdf](https://github.com/ConYel/genome_transc_human/blob/master/GSM3535476_workflow.pdf)_ should be followed to perform preprocessing of the samples, alignment, quantification and calculation of transcript abundances.
+Afterwards, the steps on the _[GSM3535476_workflow.pdf](https://github.com/ConYel/genome_transc_human/blob/master/GSM3535476_workflow.pdf)_ should be followed to perform pre-processing of the samples, alignment, quantification and calculation of transcript abundances.
 
 ## 4. Provide extra information regarding genomic locations, genes, transcripts, for the gtf
 ### Load libraries
