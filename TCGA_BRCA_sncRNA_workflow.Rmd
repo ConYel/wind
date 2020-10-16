@@ -1,7 +1,7 @@
 ---
 title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
-subtitle: "Computational workflow for the preprocessing of selected samples from of TCGA regarding Breast Cancer"
-author: "Constantinos Yeles(Konstantinos Geles)"
+subtitle: "Computational workflow for the preprocessing of selected samples from TCGA regarding Breast Cancer"
+author: "Constantinos Yeles (Konstantinos Geles)"
 date: "`r format(Sys.time(), '%a %b %d %Y')`"
 output:
   pdf_document:
