@@ -65,9 +65,9 @@ Databases that have been used:
 
 # Workflow
 ## 1. Acquisition and Preprocessing of the small ncRNA sequences
-### i. Downloading the files for the generation of a Gene transfer format(gtf) 
+### i. Downloading the files for the generation of a Gene transfer format (gtf) 
 
-piRNA sequences for mouse were downloaded from piRNABank to enrich in piRNA sequences the gtf file, and small-RNA genome coordinates(bed files) from RNACentral have been acquired
+piRNA sequences for mouse were downloaded from piRNABank to enrich in piRNA sequences the gtf file, and small-RNA genome coordinates (bed files) from RNACentral have been acquired
 ```{bash download the Databases}
 # all the files and folders for the workflow are created in the working directory 
 # plus the results of the analysis
