@@ -18,6 +18,7 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ```
+
 # Introduction
 With the intent to annotate and quantify small-RNA sequence data (and in 
 particular piRNA) derived from Next-Generation Sequencing, a workflow has been implemented. For the generation of annotation files  and results widely used tools of alignment, annotation, quantification and differential expression algorithms have been utilized. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight 
@@ -597,6 +598,7 @@ map(piRNAbank_rCentral_gtf %>% seqlevels() %>% purrr::set_names(),
         length()) %>% bind_rows() %>%  
   pivot_longer(cols = chr1:chrM) %>% 
   arrange(desc(value))
+
 # we will parallelize per chr.
 
  if(.Platform$OS.type == "windows") {
@@ -663,7 +665,7 @@ piRNAbank_rCentral_gtf %>%
   unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
   count(gene_id, sort = T) %>% write_tsv("genomic_locations_stats_multi_piRNA.txt")
 ```
-## 6. Information about inner-join and  anti-join between the two databases
+## 6. Find how many piRNAs are in common and uncommon in piRNABank and RNAcentral in the new gtf 
 
 ```{r}
 c_piBNK_RCent %>% distinct(seq_id, .keep_all = T)
@@ -674,16 +676,14 @@ c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(!is.na(sRNA_type),i
 
 c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(!is.na(name),!is.na(sRNA_id), gene_type== "piRNA")
 ```
+## 7. Find which smallRNAs are inside Trasposable Elements
 
-## 7. Find which smallRNAs inside Trasposable Elements
-we have downloaded a gtf file with the information about genomic regions of 
+We have downloaded a gtf file with the information about genomic regions of 
 Transposable Elements for human genome: http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/
-more precisely: GRCh38_GENCODE_rmsk_TE.gtf.gz	
-
-http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/GRCh38_GENCODE_rmsk_TE.gtf.gz
+more precisely: [GRCm38_Ensembl_rmsk_TE.gtf.gz](http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/GRCm38_Ensembl_rmsk_TE.gtf.gz)
 
 ```{r Trasposable Elements annotation}
-TEs <- read_gff2("GRCh38_GENCODE_rmsk_TE.gtf.gz") %>% 
+TEs <- read_gff2("GRCm38_Ensembl_rmsk_TE.gtf.gz") %>% 
   plyranges::select("TE_gene_id" = gene_id, "TE_transcript_id" = transcript_id, 
    "TE_family_id" = family_id, "TE_class_id" = class_id) %>% 
   keepStandardChromosomes(pruning.mode = "coarse") %>% 
@@ -703,51 +703,8 @@ piRNAbank_rCentral_gtf %>%
   plyranges::reduce_ranges_directed() %>% length()
 
 ```
+## 8. indexes for STAR and Salmon 
 
-## 8. Optional if there are spike-ins sequences 
-```{r adding spikes-ins in genome and gtf}
-spike <- read_tsv("spike-ins.txt", col_names = c("names", "seq_RNA"))
-fasta_gen_hg38 <- Biostrings::readDNAStringSet("human_data/hg38/GRCh38.primary_assembly.genome.fa")
-
-spikes_Fasta <- spike$seq_RNA %>%
-  DNAStringSet(start = rep(1,nrow(spike)), end = str_length(spike$seq_RNA)) %>% 
-  setNames(spike$names)  
-
-DNAStringSetList(spikes_Fasta,fasta_gen_hg38) %>% 
-  unlist() %>% 
-  Biostrings::writeXStringSet("ncRNA_genome_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa")
-
-fasta_tr_hg38 <- Biostrings::readDNAStringSet("ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.fa")
-
-DNAStringSetList(spikes_Fasta,fasta_tr_hg38) %>% 
-  unlist() %>% 
-  Biostrings::writeXStringSet("ncRNA_transcripts_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa")
-
-gtf_piB_RCentr_spikes <- spike %>% 
-  dplyr::rename("seqnames" = names) %>% 
-  mutate(
-  start = 1,
-  end = str_length(seq_RNA),
-  width = str_length(seq_RNA),
-  strand = "+",
-  gene_id = seqnames,
-  type = "exon",
-  source = "spike_in",
-  gene_type = "spike_in"
-) %>% 
-  as_granges() %>% 
-  bind_ranges(piRNAbank_rCentral_gtf) %>% 
-  write_gff2("ncRNA_transcripts_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.gtf")
-
-# file for histograms of piRNAs
-gtf_piB_RCentr_spikes %>% 
-  as_tibble() %>%
-  filter(gene_type %in% c("piRNA","spike_in")) %>% 
-  plyranges::select(gene_id, seq_RNA, gene_type) %>%
-  distinct(seq_RNA , .keep_all = TRUE) %>% 
-  write_tsv("piRNAs_hist.txt")
-```
-## indexes for STAR and Salmon 
 ```{bash spike-ins indexes}
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 
@@ -759,102 +716,16 @@ grep "^>" <my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa | cut -d 
 
 sed -i.bak -e 's/>//g' my_data/decoys.txt
 
-cat my_data/ncRNA_transcripts_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa my_data/ncRNA_genome_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa > gentrome_piRNAbank_Central.fa
+cat my_data/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_mm10.fa my_data/ncRNA_genome_100bp_RNA_Central_piRNAbank_mm10.fa > gentrome_piRNAbank_Central.fa
 
 exit
+
 # run the docker
 docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
+
 # create the index
 ## *remove manually the spike-ins chrs from decoys
 salmon index -t my_data/mouse_data/gentrome_GRCm38_piRNAbank_Central.fa -d my_data/mouse_data/decoys.txt -i my_data/mouse_data/ncRNA_Central_piRNAB_mm10_index -k 15 -p 15
 exit
 ```
-## 9.  Cross the small non-coding RNA IDs from RNAcentral with the names of other databases
-```{r}
-# download the RNAcentral file that has all IDs and the names----
-library(tidyverse)
-library(vroom)
-#fs::dir_ls(glob = "ftp://ftp.ebi.ac.uk/pub/databases/RNAcentral/current_release/id_mapping/database_mappings/*.tsv")
 
-## for human NCBI_taxon_id:9606 ----
-rnacentral_ids <- data.table::fread("../genome_transc_human/id_mapping.tsv.gz", 
-                        col.names = c("RNAcentral_id", 
-                                      "Database",
-                                      "external_id",
-                                      "NCBI_taxon_id",
-                                      "RNA_type",
-                                      "gene_name")) %>% 
-  filter(NCBI_taxon_id == "9606") %>%
-  select(-NCBI_taxon_id) %>%
-  arrange(RNAcentral_id, external_id,desc(gene_name)) %>% 
-  distinct(RNAcentral_id, external_id, gene_name, .keep_all = T) %>%
-  unite(col = ext_id_gene_name,c("external_id", "gene_name"), sep = "_gn_") %>% 
-  pivot_wider(names_from = Database, 
-              values_from = ext_id_gene_name, 
-              values_fn = toString) %>% 
-  write_tsv("../genome_transc_human/rnacentral_ids_hg38.txt")
-
-```
-## 10. piRNA targets prediction
-Download the 3', 5' and CDS fasta files from [BioMart](http://www.ensembl.org/biomart/martview/4f27740c6690896f18b1bb0fb24011cd) for the genome of interest.
-We rename the files to: "UTR3.fasta", "UTR5.fasta", "CDS.fasta" 
-- first we have to make the indexes for bowtie
-```{bash run the bowtie docker}
-mkdir UTR3 CDS UTR5
-docker run --rm -ti -v $(pwd):/home/my_data  congelos/bowtie_bowtie2
-#UTR3 index
-bowtie-build -f -o 3 --threads 8 my_data/UTR3_hg38.fasta my_data/UTR3/UTR3_hg38
-
-#UTR5 index
-bowtie-build -f -o 3 --threads 8 my_data/UTR5_hg38.fasta my_data/UTR5/UTR5_hg38
-
-#CDS index
-bowtie-build -f -o 3 --threads 8 my_data/CDS_hg38.fasta my_data/CDS/CDS_hg38
-
-# UTR3 run
-bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/UTR3/UTR_hg38 -S -f \
-my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \ 
-samtools view -F 4 -@ 2 -  > my_data/res_UTR3.txt
-
-# UTR5 run
-bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/UTR5/UTR5_hg38 -S -f \
-my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \
-samtools view -F 4 -@ 2 -  > my_data/res_UTR5.txt
-
-# CDS run
-bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/CDS/CDS_hg38 -S -f \
-my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \
-samtools view -F 4 -@ 2 -  > my_data/res_CDS_hg38.txt
-```
-### i. make a fasta with only piRNA sequences
-```{r}
-library(tidyverse)
-ncRNA_gtf <- plyranges::read_gff2("ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
-  filter(gene_type == "piRNA") %>% 
-  as_tibble() %>% 
-  distinct(gene_id, .keep_all = T) %>% 
-  select(gene_id, seq_RNA) %>% 
-  column_to_rownames("gene_id")
-
-piRNA_fa_hg38 <- Biostrings::DNAStringSet(ncRNA_gtf$seq_RNA)
-names(piRNA_fa_hg38) <- rownames(ncRNA_gtf)
-piRNA_fa_hg38 %>% 
-Biostrings::writeXStringSet("piRNAs_for_target_pred_Central_piRNAbank.fa")
-```
-### ii. make a dataframe with all predicted gene targets
-```{r}
-# Load the targets
-targets <- list.files(path = "human_data/target_prediction_indexes_hg38_UTR3_5_CDS", pattern = ".UTR.+txt|CDS.+txt",full.names = T) %>% 
-  vroom(col_names = F, id = "file", col_select = c("file", "X1", "X3")) %>%
-  mutate(file = file %>% str_remove(".+/") %>% str_remove("res_")%>% str_remove("_hg.+")) %>% 
-  separate(X3,c("Gene_stable_ID",
-                "Gene_stable_ID_version",
-                "Transcript_stable_ID",
-                "Transcript_stable_ID_version",
-                "Target_gene_name",
-                "Target_gene_type"), 
-           sep = "\\|") %>% 
-  dplyr::rename(piRNA_id = X1) %>% 
-  arrange(Target_gene_name) %>% 
-  write_tsv("human_data/piRNA_predicted_Targets.txt")
-```

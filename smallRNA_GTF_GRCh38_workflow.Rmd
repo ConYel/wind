@@ -651,7 +651,18 @@ piRNAbank_rCentral_gtf %>%
   unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
   count(gene_id, sort = T) %>% write_tsv("genomic_locations_stats_multi_piRNA.txt")
 ```
-## 6. Find which smallRNAs are inside Trasposable Elements
+## 6. Find how many piRNAs are in common and uncommon in piRNABank and RNAcentral in the new gtf 
+
+```{r}
+c_piBNK_RCent %>% distinct(seq_id, .keep_all = T)
+
+c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(is.na(sRNA_type),gene_type == "piRNA")
+
+c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(!is.na(sRNA_type),is.na(sRNA_id),gene_type == "piRNA")
+
+c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(!is.na(name),!is.na(sRNA_id), gene_type== "piRNA")
+```
+## 7. Find which smallRNAs are inside Trasposable Elements
 
 We have downloaded a gtf file with the information about genomic regions of 
 Transposable Elements for human genome: http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/
@@ -678,8 +689,9 @@ piRNAbank_rCentral_gtf %>%
   plyranges::reduce_ranges_directed() %>% length()
 
 ```
-## 7. Optional~  
+## 8. Optional~  
 ###  i. If there are spike-ins sequences 
+
 ```{r adding spikes-ins in genome and gtf}
 spike <- read_tsv("spike-ins.txt", col_names = c("names", "seq_RNA"))
 fasta_gen_hg38 <- Biostrings::readDNAStringSet("human_data/hg38/GRCh38.primary_assembly.genome.fa")
@@ -978,5 +990,96 @@ get_gene_type <- function(x){key_mIrna_pIrna %>%
 
 test_mut_reads %>% head %>% 
   mutate_at(vars(starts_with("V")), ~map_chr(.,get_gene_type)) 
+
+```
+## 9. piRNA targets prediction
+Download the 3', 5' and CDS fasta files from [BioMart](http://www.ensembl.org/biomart/martview/4f27740c6690896f18b1bb0fb24011cd) for the genome of interest.
+We rename the files to: "UTR3.fasta", "UTR5.fasta", "CDS.fasta" 
+- first we have to make the indexes for bowtie
+
+```{bash run the bowtie docker}
+mkdir UTR3 CDS UTR5
+docker run --rm -ti -v $(pwd):/home/my_data  congelos/bowtie_bowtie2
+#UTR3 index
+bowtie-build -f -o 3 --threads 8 my_data/UTR3_hg38.fasta my_data/UTR3/UTR3_hg38
+
+#UTR5 index
+bowtie-build -f -o 3 --threads 8 my_data/UTR5_hg38.fasta my_data/UTR5/UTR5_hg38
+
+#CDS index
+bowtie-build -f -o 3 --threads 8 my_data/CDS_hg38.fasta my_data/CDS/CDS_hg38
+
+# UTR3 run
+bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/UTR3/UTR_hg38 -S -f \
+my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \ 
+samtools view -F 4 -@ 2 -  > my_data/res_UTR3.txt
+
+# UTR5 run
+bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/UTR5/UTR5_hg38 -S -f \
+my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \
+samtools view -F 4 -@ 2 -  > my_data/res_UTR5.txt
+
+# CDS run
+bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/CDS/CDS_hg38 -S -f \
+my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \
+samtools view -F 4 -@ 2 -  > my_data/res_CDS_hg38.txt
+```
+### i. make a fasta with only piRNA sequences
+
+```{r piRNA fasta}
+library(tidyverse)
+ncRNA_gtf <- plyranges::read_gff2("ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
+  filter(gene_type == "piRNA") %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = T) %>% 
+  select(gene_id, seq_RNA) %>% 
+  column_to_rownames("gene_id")
+
+piRNA_fa_hg38 <- Biostrings::DNAStringSet(ncRNA_gtf$seq_RNA)
+names(piRNA_fa_hg38) <- rownames(ncRNA_gtf)
+piRNA_fa_hg38 %>% 
+Biostrings::writeXStringSet("piRNAs_for_target_pred_Central_piRNAbank.fa")
+```
+### ii. make a dataframe with all predicted gene targets
+
+```{r export predicted targeted genes}
+# Load the targets
+targets <- list.files(path = "human_data/target_prediction_indexes_hg38_UTR3_5_CDS", pattern = ".UTR.+txt|CDS.+txt",full.names = T) %>% 
+  vroom(col_names = F, id = "file", col_select = c("file", "X1", "X3")) %>%
+  mutate(file = file %>% str_remove(".+/") %>% str_remove("res_")%>% str_remove("_hg.+")) %>% 
+  separate(X3,c("Gene_stable_ID",
+                "Gene_stable_ID_version",
+                "Transcript_stable_ID",
+                "Transcript_stable_ID_version",
+                "Target_gene_name",
+                "Target_gene_type"), 
+           sep = "\\|") %>% 
+  dplyr::rename(piRNA_id = X1) %>% 
+  arrange(Target_gene_name) %>% 
+  write_tsv("human_data/piRNA_predicted_Targets.txt")
+```
+## 10.  Cross the small non-coding RNA IDs from RNAcentral with the names of other databases
+
+```{r}
+# download the RNAcentral file that has all IDs and the names----
+library(tidyverse)
+library(vroom)
+## for human NCBI_taxon_id:9606 ----
+rnacentral_ids <- data.table::fread("../genome_transc_human/id_mapping.tsv.gz", 
+                        col.names = c("RNAcentral_id", 
+                                      "Database",
+                                      "external_id",
+                                      "NCBI_taxon_id",
+                                      "RNA_type",
+                                      "gene_name")) %>% 
+  filter(NCBI_taxon_id == "9606") %>%
+  select(-NCBI_taxon_id) %>%
+  arrange(RNAcentral_id, external_id,desc(gene_name)) %>% 
+  distinct(RNAcentral_id, external_id, gene_name, .keep_all = T) %>%
+  unite(col = ext_id_gene_name,c("external_id", "gene_name"), sep = "_gn_") %>% 
+  pivot_wider(names_from = Database, 
+              values_from = ext_id_gene_name, 
+              values_fn = toString) %>% 
+  write_tsv("../genome_transc_human/rnacentral_ids_hg38.txt")
 
 ```
