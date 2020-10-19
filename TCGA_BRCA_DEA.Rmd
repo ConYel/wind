@@ -407,11 +407,18 @@ colnames(FC_mat_1) <- colnames(FC_mat_1) %>% str_remove("-13_mirna_gdc_realn")
 
 # add the Annotation ----
 #expression
-ha_1 <- HeatmapAnnotation(samples = FC_mat_1 %>% colnames,
+ht_df <- data.frame(samples = FC_mat_1 %>% colnames,
+                batch =  fc_list$samples$batch,
+                row.names = FC_mat_1 %>% colnames)
+ha_1 <- HeatmapAnnotation(df = ht_df,
                           annotation_name_side = "left",
                           col = list(samples = fc_list$colours %>% 
                                        set_names(FC_mat_1 %>% 
-                                                   colnames)))
+                                                   colnames),
+                                     batch =  RColorBrewer::brewer.pal(n = 9, name = "Set3") %>% 
+                                       rep(each = 2) %>% 
+                                       as_factor() %>% 
+                                       set_names(fc_list$samples$batch)))
 
 # lFCS
 ha_1_LFCs <- HeatmapAnnotation(Tumor_vs_Normal = c("FeatureCounts", "salmon"),
@@ -442,9 +449,12 @@ ht_1 <- Heatmap(matrix = FC_mat_1, #data
         clustering_method_columns =  "ward.D2",
         clustering_method_rows = "ward.D2",
         clustering_distance_rows = "spearman",
-        row_dend_reorder = TRUE
+        row_dend_reorder = TRUE,
+        simple_anno_size_adjust = TRUE
 )
-
+rownames(lfc_piRNAs_DE) <- lfc_piRNAs_DE %>% 
+  rownames() %>% 
+  str_remove("_GR_.+")
 ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
         top_annotation = ha_1_LFCs, #annot
         col = f_1_LFCs, #colors data    
@@ -458,11 +468,11 @@ ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
         row_dend_reorder = TRUE
 )
 
-draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"))
+draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),merge_legend = TRUE)
 
-pdf("ESCvESC_CM_heatmap_FC.pdf")
+pdf("BRCA_tumourvsnormal_heatmap_FC.pdf")
 draw(ht_1+ht_1_lFCs,
-     column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"))
+     column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"), merge_legend = TRUE)
 dev.off()
 ```
 
