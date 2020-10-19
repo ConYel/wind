@@ -52,7 +52,7 @@ dat_path <-  str_glue("{my_basename}/DEA_{my_exp}_{todate}/{c(my_exp_sal,my_exp_
   set_names("salmon","featureCounts")
 dat_path %>% map(~dir.create(str_glue("./{.x}"), recursive = TRUE))
 ```
-## 1. import the normalized files
+## 1. Import the normalized files
 
 ```{r import salmon}
 list_norm_dgls <- list.files(path = my_basename, pattern = "list_norm_dgls.+rds",
@@ -71,7 +71,7 @@ fc_norm <- list_norm_dgls %>%
   list_norm_dgls[.] %>% 
   read_rds()
 ```
-## 2. extract normalized objects 
+## 2. Extract normalized objects 
 
 We will work with TMM normalization and  TMM voom with quality weights
 
@@ -81,7 +81,7 @@ salmon_vm_QW_TMM <- salmon_norm[["voomQW_TMM"]]
 fc_edgR_TMM <- fc_norm[["TMM"]]
 fc_vm_QW_TMM <- fc_norm[["voomQW_TMM"]]
 ```
-## 3. create the design matrix
+## 3. Create the design matrix
 
 If we load the voom object we can extract the design matrix otherwise we can create it again from the dgl object.
 
@@ -94,7 +94,7 @@ design <- model.matrix(~0 + targets$group ,data = targets)
 colnames(design) <- colnames(design) %>% 
   str_remove(".+\\$group")
 ```
-## 4. edgeR
+## 4. EdgeR
 Perform the analysis with edgeR TMM normalization for both salmon and featurecounts
 
 ```{r edgeR_DE}
@@ -162,7 +162,7 @@ vennDiagram(results,
     circle.col = c("red", "blue", "green3"))
 dev.off()
 ```
-## 5. limma 
+## 5. Limma 
 
 ```{r limma_DE}
 # design ----
@@ -323,7 +323,7 @@ res_ids <- public_res$smallRNA %>% str_c(collapse = "|")
 
 all_comp %>% mutate(across(.cols = starts_with("logFC_"),gtools::logratio2foldchange,.names = "{str_remove({col}, pattern='log')}"))
 ```
-# 7. find predicted targets
+# 7. Find predicted targets
 
 ```{r}
 suppressPackageStartupMessages(library(plyranges))
@@ -340,3 +340,129 @@ targets_all <- read_tsv("../genome_transc_human/human_data/piRNA_predicted_Targe
 targets_DEs_keep <- all_comp %>% unite(piRNA_id, c(RNAcentral_id, GR),sep = "_GR_") %>% filter(gene_type == "piRNA") %>% inner_join(targets_all) %>% 
   write_tsv("Breast_Cancer_TCGA/DEA_BRCA_06_Oct_2020/DE_targets_predicted.txt")
 ```
+# 8. Make a heatmap of differential expressed piRNAs
+## i. Load the libraries
+
+```{r heatmap libraries}
+library(wesanderson)
+library(ComplexHeatmap)
+library(circlize)
+```
+## ii. Load data
+
+```{r heatmap dataload}
+# load the piRNAs log fold changes
+piRNAs_DE <- list.files(pattern = "all_comparisons_voom_QW_TMM") %>% 
+  read_tsv() %>% 
+  filter(gene_type == "piRNA",
+         across(.cols = contains("adj.P.Val"), 
+                .fns = ~ .x< 0.05)) %>% 
+  dplyr::select(smallRNA, contains("logFC"))
+  
+
+# load the piRNA expression matrix----
+## featurecounts
+fc_list <- "list_norm_dgls_featureCounts.rds" %>% 
+  read_rds() %>% 
+  .[["TMM"]] 
+
+fc_cpm <- fc_list  %>% 
+  cpm(log =TRUE) %>%
+  .[rownames(.) %in% piRNAs_DE$smallRNA,] 
+
+## salmon
+salmon_list <- "list_norm_dgls_salmon.rds" %>% 
+  read_rds() %>% 
+  .[["TMM"]] 
+
+salmon_cpm <- salmon_list  %>% 
+  cpm(log =TRUE) %>%
+  .[rownames(.) %in% piRNAs_DE$smallRNA,]
+
+# make the matrices for the heatmap -----
+FC_mat_1 <- fc_cpm %>% 
+  t() %>% scale() %>% t()
+FC_mat_1 %>% dim()
+FC_mat_1 %>% head()
+hist(FC_mat_1)
+
+salmon_mat_1 <- salmon_cpm %>% 
+  t() %>% scale() %>% t()
+salmon_mat_1 %>% dim()
+salmon_mat_1 %>% head()
+hist(salmon_mat_1)
+
+# logFCS
+lfc_piRNAs_DE <- piRNAs_DE %>% 
+  column_to_rownames("smallRNA") %>% 
+  as.matrix()
+
+lfc_piRNAs_DE %>% dim()
+lfc_piRNAs_DE %>% head()
+hist(lfc_piRNAs_DE)
+
+lfc_piRNAs_DE <- lfc_piRNAs_DE[rownames(FC_mat_1) ,]
+
+colnames(FC_mat_1) <- colnames(FC_mat_1) %>% str_remove("-13_mirna_gdc_realn")
+
+# add the Annotation ----
+#expression
+ha_1 <- HeatmapAnnotation(samples = FC_mat_1 %>% colnames,
+                          annotation_name_side = "left",
+                          col = list(samples = fc_list$colours %>% 
+                                       set_names(FC_mat_1 %>% 
+                                                   colnames)))
+
+# lFCS
+ha_1_LFCs <- HeatmapAnnotation(Tumor_vs_Normal = c("FeatureCounts", "salmon"),
+                              col = list(Tumor_vs_Normal = wes_palettes$Moonrise2[1:2] %>%
+                          set_names("FeatureCounts", "salmon")))
+
+## Colours of heatmap -----
+#expression
+f_1 <- colorRamp2(c(round(quantile(FC_mat_1, probs = 0.25)), 
+                    median(FC_mat_1),
+                    round(quantile(FC_mat_1, probs = 0.75))), 
+                  c("blue", "black", "yellow"))
+
+# lFCS
+f_1_LFCs <- colorRamp2(c(quantile(lfc_piRNAs_DE, probs = 0.25) %>% round,
+                    mean(lfc_piRNAs_DE),
+                    quantile(lfc_piRNAs_DE, probs = 0.75) %>% round),
+                    c("forestgreen", "black", "red"))
+
+## Heatmaps ------
+ht_1 <- Heatmap(matrix = FC_mat_1, #data
+        top_annotation = ha_1, #annot
+        col = f_1, #colors data    
+        show_row_dend = FALSE,
+        show_row_names = TRUE,
+        name = "z-score equivalent expression",
+        clustering_distance_columns = "spearman",
+        clustering_method_columns =  "ward.D2",
+        clustering_method_rows = "ward.D2",
+        clustering_distance_rows = "spearman",
+        row_dend_reorder = TRUE
+)
+
+ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
+        top_annotation = ha_1_LFCs, #annot
+        col = f_1_LFCs, #colors data    
+        show_row_dend = FALSE,
+        show_row_names = TRUE,
+        name = "Log Fold Change",
+        clustering_distance_columns = "spearman",
+        clustering_method_columns =  "ward.D2",
+        clustering_method_rows = "ward.D2",
+        clustering_distance_rows = "spearman",
+        row_dend_reorder = TRUE
+)
+
+draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"))
+
+pdf("ESCvESC_CM_heatmap_FC.pdf")
+draw(ht_1+ht_1_lFCs,
+     column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"))
+dev.off()
+```
+
