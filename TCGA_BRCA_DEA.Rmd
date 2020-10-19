@@ -470,7 +470,7 @@ ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
 
 draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),merge_legend = TRUE)
 
-pdf("BRCA_tumourvsnormal_heatmap_FC.pdf")
+pdf("BRCA_tumour_vs_normal_heatmap_FC.pdf")
 draw(ht_1+ht_1_lFCs,
      column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"), merge_legend = TRUE)
 dev.off()
