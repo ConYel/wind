@@ -407,22 +407,18 @@ colnames(FC_mat_1) <- colnames(FC_mat_1) %>% str_remove("-13_mirna_gdc_realn")
 
 # add the Annotation ----
 #expression
-ht_df <- data.frame(samples = FC_mat_1 %>% colnames,
+ht_df <- data.frame(samples = fc_list$colours,
                 batch =  fc_list$samples$batch,
                 row.names = FC_mat_1 %>% colnames)
-ha_1 <- HeatmapAnnotation(df = ht_df,
+
+ha_1 <- HeatmapAnnotation(Tumour_vs_Normal = fc_list$samples$group,
                           annotation_name_side = "left",
-                          col = list(samples = fc_list$colours %>% 
-                                       set_names(FC_mat_1 %>% 
-                                                   colnames),
-                                     batch =  RColorBrewer::brewer.pal(n = 9, name = "Set3") %>% 
-                                       rep(each = 2) %>% 
-                                       as_factor() %>% 
-                                       set_names(fc_list$samples$batch)))
+                          col = list(Tumour_vs_Normal = fc_list$colours %>% 
+                                       set_names(fc_list$samples$group)))
 
 # lFCS
-ha_1_LFCs <- HeatmapAnnotation(Tumor_vs_Normal = c("FeatureCounts", "salmon"),
-                              col = list(Tumor_vs_Normal = wes_palettes$Moonrise2[1:2] %>%
+ha_1_LFCs <- HeatmapAnnotation(Method = c("FeatureCounts", "salmon"),
+                              col = list(Method = wes_palettes$Moonrise2[c(1,4)] %>%
                           set_names("FeatureCounts", "salmon")))
 
 ## Colours of heatmap -----
@@ -442,15 +438,15 @@ f_1_LFCs <- colorRamp2(c(quantile(lfc_piRNAs_DE, probs = 0.25) %>% round,
 ht_1 <- Heatmap(matrix = FC_mat_1, #data
         top_annotation = ha_1, #annot
         col = f_1, #colors data    
-        show_row_dend = FALSE,
-        show_row_names = TRUE,
+        show_row_dend = TRUE,
+        show_row_names = FALSE,
+        show_column_names = FALSE,
         name = "z-score equivalent expression",
         clustering_distance_columns = "spearman",
         clustering_method_columns =  "ward.D2",
         clustering_method_rows = "ward.D2",
         clustering_distance_rows = "spearman",
-        row_dend_reorder = TRUE,
-        simple_anno_size_adjust = TRUE
+        row_dend_reorder = TRUE
 )
 rownames(lfc_piRNAs_DE) <- lfc_piRNAs_DE %>% 
   rownames() %>% 
@@ -460,6 +456,7 @@ ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
         col = f_1_LFCs, #colors data    
         show_row_dend = FALSE,
         show_row_names = TRUE,
+        show_column_names = FALSE,
         name = "Log Fold Change",
         clustering_distance_columns = "spearman",
         clustering_method_columns =  "ward.D2",
@@ -472,7 +469,8 @@ draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRN
 
 pdf("BRCA_tumour_vs_normal_heatmap_FC.pdf")
 draw(ht_1+ht_1_lFCs,
-     column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"), merge_legend = TRUE)
+     column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"), 
+     merge_legend = TRUE)
 dev.off()
 ```
 
