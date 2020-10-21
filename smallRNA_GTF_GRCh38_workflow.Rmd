@@ -118,11 +118,11 @@ In the piRNABank fasta duplicated sequences exist and are removed
 ```{r remove duplicates}
 # import the fasta  ----
 pirnaB_hg19 <- Biostrings::readDNAStringSet("human_data/pirnaBank_human.fasta")
-pirnaB_hg19 %>% length() ## >[1] 667944
+pirnaB_hg19 %>% length() ## >[1] 667,944 seq
 
 # remove duplicated sequences---- 
 pirnaB_hg19 <- pirnaB_hg19[!duplicated(pirnaB_hg19)]
-pirnaB_hg19 %>% length() ## >[1] 23439
+pirnaB_hg19 %>% length() ## >[1] 23,439 seq
 
 # clean the names----
 names(pirnaB_hg19) <- names(pirnaB_hg19) %>% 
@@ -200,16 +200,16 @@ seqinfo(sRNA)<- sInfo
 
 ```{r filter 100bp}
 tr_sRNA <- sRNA %>% 
-  as_tibble() %>% 
-  filter(width < 100) %>% 
+  as_tibble() %>% # [602,197] genomic ranges / [446,265] sRNA_ids
+  filter(width < 100) %>% # [162,958] GR / [44,556] sRNA_ids
   mutate(sRNA_id = str_remove(sRNA_id,"_9606")) %>% 
   as_granges() %>% 
   # keep info about the standard chromosomes
-  keepStandardChromosomes(pruning.mode = "coarse") %>% # [162.958] -> [160.980]
+  keepStandardChromosomes(pruning.mode = "coarse") %>% # [162.958] -> [160.980] GRs / [44,556] -> [44,529] sRNA_ids
   # remove the duplicated entries from RNAcentral
   as_tibble() %>% 
   unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
-  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRanges [160.980] -> [153.043]
+  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRanges [160.980] -> [153.043] GRs / [44,529] -> [41,496] sRNA_ids
   separate(col = seq_s,
            into = c("seqnames","start","end","width","strand"),
            sep = "_") %>% 
@@ -241,7 +241,7 @@ fasta_tr_hs_tbl <- fasta_tr_hs %>%
 fasta_tr_hs_tbl %>% 
   distinct(tr_hg38, hg38, gene_type, .keep_all = TRUE) %>% 
   filter(duplicated(hg38)) %>%
-  count(hg38,sort = TRUE) 
+  count(hg38,sort = TRUE) # 27 duplicated sequences
 
 ### duplicates between sequences and genomic locations(GRanges)----
 # make a tibble with all GR, seq and ids
@@ -257,7 +257,7 @@ uniq_seq <- transcripts_GR  %>%
   mutate(sRNA_id2 = str_c(sRNA_id,"_GR_",seq_RCent)) %>% 
   select(dna,sRNA_id2)
 
-transcripts_GR <- transcripts_GR %>% 
+transcripts_GR <- transcripts_GR %>%  # [153.043] GRs / [41,496] sRNA_id -> [43,575] sRNA_id2 
   left_join(uniq_seq)
 
 ```
@@ -266,7 +266,7 @@ transcripts_GR <- transcripts_GR %>%
 ```{r import piRNABank}
 piRNAbank_hg38 <- Biostrings::readDNAStringSet("piRNABank_human_hg38/piBnk38_sorted.fasta")
 
-piRNAbank_hg38_tib <- piRNAbank_hg38 %>%
+piRNAbank_hg38_tib <- piRNAbank_hg38 %>% # 23,120 sequences
   as.character() %>% 
   enframe(value = "seq_piBn") %>% 
   mutate(sRNA_type ="piRNA",
@@ -279,10 +279,10 @@ piRNAbank_hg38_tib <- piRNAbank_hg38 %>%
 # piRNABank. import the granges and change it -----
   piRNAbank_hg38_ranges <- read_bed("piRNABank_human_hg38/piBnk38_sorted.bed") %>% 
   as_tibble() %>% 
-  arrange(desc(width)) %>% 
-  filter(width < 100) %>% 
+  arrange(desc(width)) %>% # [46,552] GRs / 23,120 sequences
+  filter(width < 100) %>% #  [46,552] -> [46,503] GRs / 23,120
   as_granges() %>% 
-  keepStandardChromosomes(pruning.mode = "coarse")
+  keepStandardChromosomes(pruning.mode = "coarse") # [46,503] -> [45,818] GRs / 23,120 seq
 
 transcripts_pi_hg38 <- Views(BSgenome.Hsapiens.UCSC.hg38, piRNAbank_hg38_ranges) %>%
   as_granges() %>%
@@ -291,7 +291,7 @@ transcripts_pi_hg38 <- Views(BSgenome.Hsapiens.UCSC.hg38, piRNAbank_hg38_ranges)
 
 # we need to apply a second width filter at 69 
 # as we know that piRNAs are ~32 base pairs
-transcripts_pi_hg38 <- transcripts_pi_hg38 %>% filter(width < 69)
+transcripts_pi_hg38 <- transcripts_pi_hg38 %>% filter(width < 69)  # [45,818] -> [45,810] GRs / 23,120 seq
 transcripts_pi_hg38 %>% count(name) %>% nrow #> 23120 piRNAs from piRNABANK
 
 # checking sequences of alignments with lower length
@@ -319,34 +319,11 @@ transcripts_pi_hg38_clean <- transcripts_pi_hg38 %>%
   left_join(piRNAbank_hg38_tib) %>% 
   arrange(desc(width)) %>% 
   mutate(sequences_true = (dna == seq_piBn)) %>% 
-  filter(sequences_true == TRUE) %>% 
+  filter(sequences_true == TRUE) %>% # [45,810] -> [44,557] GRs/ [23,120] -> [23,116] sequences
   select(-score, -seq_piBn, -bpairs_piR, -sequences_true) %>% 
-  unite(col = "seq_piBNK",seqnames:strand, sep = "_")
+  unite(col = "seq_piBNK", seqnames:strand, sep = "_")
 
-transcripts_pi_hg38_clean %>% count(name) %>% nrow #> 23116 piRNAs final piRNABANK
-#> 44,557 Genomic ranges
-
-# sanity checks ----
-concated_hg38_piBAnk %>% 
-  filter(!duplicated(dna)) %>% 
-  select(sRNA_id,seq_id) %>% 
-  arrange(sRNA_id)
-
-tr_test <- transcripts_human %>% as_granges()
-
-concated_hg38_piBAnk %>% filter(sRNA_id == "URS0000000096")
-transcripts_pi_hg38_clean %>%  filter(name == "hsa_piR_009796_DQ583192")
-
-tr_test %>% filter(sRNA_id == "URS0000000096")
-
-## checking for the duplicated sequences
-concated_hg38_piBAnk %>% 
-  filter(duplicated(dna)) %>% 
-  select(seq_RCent,seq_id)
-
-concated_hg38_piBAnk %>% filter(sRNA_id == "URS00001B5714")
-transcripts_pi_hg38_clean %>%  filter(name == "hsa_piR_011289_DQ585240")
-tr_test %>% filter(sRNA_id == "URS00001B5714")
+transcripts_pi_hg38_clean %>% count(name) %>% nrow #>  23,116 piRNAs final piRNABANK
 ```
 ### vi. RNAcentral. + piRNABank. make annotation tibble
 
@@ -358,6 +335,7 @@ hg38_piBAnk_RCent <- transcripts_GR %>%
 hg38_piBAnk_RCent %>% 
   filter(is.na(name)) %>% 
   count(gene_type) 
+
 hg38_piBAnk_RCent %>% 
   filter(!is.na(name)) %>% 
   count(gene_type,sRNA_type) 
@@ -372,7 +350,7 @@ concated_hg38_piBAnk <- hg38_piBAnk_RCent  %>%
     )
   )
 
-# sanity checks ----
+# sanity checks 1 ----
 ## checking for the NA values, should be only true
 (concated_hg38_piBAnk %>% 
     filter(is.na(name)) %>% .$sRNA_id2 == 
@@ -424,6 +402,27 @@ dupl_seqs <- concated_hg38_piBAnk %>%
 fasta_tr_hs_tbl %>% 
   filter(hg38 %in% dupl_seqs$dna)
 
+# sanity checks 2 ----
+concated_hg38_piBAnk %>% 
+  filter(!duplicated(dna)) %>% 
+  select(sRNA_id,seq_id) %>% 
+  arrange(sRNA_id)
+
+tr_test <- transcripts_human %>% as_granges()
+
+concated_hg38_piBAnk %>% filter(sRNA_id == "URS0000000096")
+transcripts_pi_hg38_clean %>%  filter(name == "hsa_piR_009796_DQ583192")
+
+tr_test %>% filter(sRNA_id == "URS0000000096")
+
+## checking for the duplicated sequences
+concated_hg38_piBAnk %>% 
+  filter(duplicated(dna)) %>% 
+  select(seq_RCent,seq_id)
+
+concated_hg38_piBAnk %>% filter(sRNA_id == "URS00001B5714")
+transcripts_pi_hg38_clean %>%  filter(name == "hsa_piR_011289_DQ585240")
+tr_test %>% filter(sRNA_id == "URS00001B5714")
 ```
 ### vii. RNAcentral + piRNABank. generation of Granges
 
@@ -432,6 +431,8 @@ concated_hg38_piBAnk  # df with combined sequences piRNAbank+RNAcentral
 transcripts_pi_hg38_clean # has all alignments from piRNAbank 
 tr_sRNA # has the ranges with less than 100 bp from RNAcentral
 
+# here we change the small-RNA category of a piRNA from piRNABank if it is found 
+# in RNACentral with another small-RNA category
 c_piBNK_RCent <- concated_hg38_piBAnk %>%
   full_join(transcripts_pi_hg38_clean, by = c("dna", 
     "name", "sRNA_type", "seq_RCent" =  "seq_piBNK")) %>% 
@@ -507,7 +508,7 @@ c_piBNK_RCent_GR %>%
   as_tibble() %>% 
   filter(width > 40) %>% 
   arrange(desc(width)) %>% 
-  count(width) %>% view
+  count(width, sort = T) %>% view
   
 # testing of sequences-----
 piRNAbank_rCentral_seqs <- Views(BSgenome.Hsapiens.UCSC.hg38, c_piBNK_RCent_GR)
