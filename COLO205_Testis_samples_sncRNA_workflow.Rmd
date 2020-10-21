@@ -104,16 +104,16 @@ docker run --rm -ti -v "$PWD":/home/my_data congelos/sncrna_workflow
 
 STAR --runMode genomeGenerate --genomeDir my_data/mouse_data/GRCh38 --genomeFastaFiles my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa --runThreadN 6
 
-mkdir my_data/smallRNA-breast-cancer/GSE68246/star_results
+mkdir my_data/testis_colo_pub_workflow/star
 
-for file in my_data/smallRNA-breast-cancer/GSE68246/GSE_samples/*.trimmed.fastq.gz; 
-do
-samp=`basename ${file}`;
-regex="${samp%%.trimmed.fastq.gz}";
-echo "Processing sample ${samp} start: $(date)";
-STAR --genomeDir my_data/genome_transc_human/human_data/GRCh38_2_7_4a --genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat --runThreadN 6 --alignIntronMax 1 --outSAMattributes NH HI NM MD --outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate --limitBAMsortRAM 40000000000 --outReadsUnmapped Fastx --outFilterMismatchNmax 1 --outFilterMatchNmin 14 --outFileNamePrefix "my_data/smallRNA-breast-cancer/GSE68246/star/${regex}_align/${regex}_"; 
+for file in my_data/testis_colo_pub_workflow/samples/*.trimmed.fastq.gz; 
+do 
+samp=`basename ${file}`; regex="${samp%%.trimmed.fastq.gz}"; 
+echo "Processing sample ${samp} start: $(date)"; 
+STAR --genomeDir my_data/genome_transc_human/human_data/GRCh38_2_7_4a --genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat --runThreadN 12 --alignIntronMax 1 --outSAMattributes NH HI NM MD --outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate --limitBAMsortRAM 40000000000 --outReadsUnmapped Fastx --outFilterMismatchNmax 1 --outFilterMatchNmin 14 --outFileNamePrefix "my_data/testis_colo_pub_workflow/star/${regex}_align/${regex}_";  
 echo "end:$(date)";
 done
+
 exit
 ```
 
@@ -133,7 +133,7 @@ we input http://localhost:8787/ on browser and 0 for username and 12345 for pass
 ```{r featureCounts}
 library(Rsubread)
 library(tidyverse)
-list.BAM <- list.files(path = "GSE68246/star_results", 
+list.BAM <- list.files(path = "../testis_colo_pub_workflow/star", 
                        pattern = ".bam$", 
                        recursive = TRUE, 
                        full.names = T)
@@ -156,7 +156,7 @@ fc <- featureCounts(files = list.BAM,
                     verbose = TRUE,
                     reportReads = "BAM",
                     reportReadsPath = "GSE68246/star_results") 
-fc %>% write_rds(str_glue("GSE68246/feature_counts_GSE68246_{todate}.rds"))
+fc %>% write_rds(str_glue("../testis_colo_pub_workflow/testis_colo205_{todate}.rds"))
 ```
 
 Next we will follow the workflow of data_exploration_salmon_fc
