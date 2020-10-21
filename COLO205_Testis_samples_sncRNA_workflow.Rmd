@@ -146,7 +146,7 @@ fc <- featureCounts(files = list.BAM,
                     isGTFAnnotationFile = TRUE,
                     GTF.featureType = "exon",
                     GTF.attrType.extra = c("gene_type", "sRNA_id", "seq_RNA"),
-                    nthreads = 6,
+                    nthreads = 10,
                     useMetaFeatures = TRUE,
                     allowMultiOverlap = TRUE,
                     minOverlap = 10,
@@ -155,7 +155,7 @@ fc <- featureCounts(files = list.BAM,
                     strandSpecific = 0,
                     verbose = TRUE,
                     reportReads = "BAM",
-                    reportReadsPath = "GSE68246/star_results") 
+                    reportReadsPath = "../testis_colo_pub_workflow/star") 
 fc %>% write_rds(str_glue("../testis_colo_pub_workflow/testis_colo205_{todate}.rds"))
 ```
 
