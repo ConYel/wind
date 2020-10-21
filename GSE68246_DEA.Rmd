@@ -361,7 +361,7 @@ ha_1 <- HeatmapAnnotation(Group = fc_list$samples$group,
 
 # lFCS
 ha_1_LFCs <- HeatmapAnnotation(Method = c("FeatureCounts", "salmon"),
-                              col = list(Method = wes_palettes$Moonrise2[c(1,4)] %>%
+                              col = list(Method = wes_palettes$Moonrise1[c(2,3)] %>%
                           set_names("FeatureCounts", "salmon")))
 
 ## Colours of heatmap -----
@@ -412,7 +412,8 @@ ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
 draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),
      merge_legend = TRUE)
 
-pdf("GSE68246_spheroid_vs_mono_heatmap_FC.pdf")
+tiff("GSE68246_spheroid_vs_mono_heatmap_FC.tiff", 
+     compression = "none", height = 10, width = 14,  units = 'in', res = 300)
 draw(ht_1+ht_1_lFCs,
      column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"), 
      merge_legend = TRUE)

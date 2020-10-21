@@ -407,9 +407,9 @@ colnames(FC_mat_1) <- colnames(FC_mat_1) %>% str_remove("-13_mirna_gdc_realn")
 
 # add the Annotation ----
 #expression
-ha_1 <- HeatmapAnnotation(Tumour_vs_Normal = fc_list$samples$group,
+ha_1 <- HeatmapAnnotation(Group = fc_list$samples$group,
                           annotation_name_side = "left",
-                          col = list(Tumour_vs_Normal = fc_list$colours %>% 
+                          col = list(Group = fc_list$colours %>% 
                                        set_names(fc_list$samples$group)))
 
 # lFCS
@@ -464,7 +464,8 @@ ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
 draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),
      merge_legend = TRUE)
 
-pdf("BRCA_tumour_vs_normal_heatmap_FC.pdf")
+tiff("BRCA_tumour_vs_normal_heatmap_FC.tiff", 
+     compression = "none", height = 10, width = 14,  units = 'in', res = 300)
 draw(ht_1+ht_1_lFCs,
      column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"), 
      merge_legend = TRUE)
