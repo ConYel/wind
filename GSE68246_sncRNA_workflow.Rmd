@@ -99,7 +99,7 @@ we get sorted BAM files and use them for quantification / annotation for smallRN
 ### ii. Alignment with STAR
 
 ```{bash STAR}
-docker run --rm -ti -v "$PWD":/home/my_data congelos/spar
+docker run --rm -ti -v "$PWD":/home/my_data congelos/sncrna_workflow
 
 STAR --runMode genomeGenerate --genomeDir my_data/mouse_data/GRCh38 --genomeFastaFiles my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa --runThreadN 6
 
