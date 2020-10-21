@@ -1,6 +1,6 @@
 ---
 title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
-subtitle: "Computational workflow for the preprocessing of the GSE68246 dataset regarding Human Breast MCF-7 Cell Line with Cancer Stem Cell Properties"
+subtitle: "Computational workflow for the preprocessing of selected samples from the E-MTAB-8115 dataset  and some replicates for Testis samples"
 author: "Constantinos Yeles (Konstantinos Geles)"
 date: "`r format(Sys.time(), '%a_%b_%d_%Y')`"
 output:
@@ -20,8 +20,8 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ```
 ## The Data set
 
-We will work on a public dataset with GEO accession number: [GSE68246](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE68246),
-that it has been used in the publications: __[Phenotypic and microRNA transcriptomic profiling of the MDA-MB-231 spheroid-enriched CSCs with comparison of MCF-7 microRNA profiling dataset](https://pubmed.ncbi.nlm.nih.gov/28717596/)__ and __[MiRNA Transcriptome Profiling of Spheroid-Enriched Cells with Cancer Stem Cell Properties in Human Breast MCF-7 Cell Line](https://pubmed.ncbi.nlm.nih.gov/27019627/)__
+We will work on a public dataset uploaded on ArrayExpress with id: [E-MTAB-8115](https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-8115/samples/),
+that it has been used in the publication: __[Molecular and Functional Characterization of the Somatic PIWIL1/piRNA Pathway in Colorectal Cancer Cells](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6912267/)__ and some other samples from testis tissue.
 
 ## Data aqcuisition and preprocessing  
 
@@ -46,15 +46,16 @@ We work with the __[Fastqc](https://www.bioinformatics.babraham.ac.uk/projects/f
 ```{bash preprocessing}
 mkdir my_data/qc_first
 
-'fastqc' --threads 6 --outdir=my_data/qc_first/ my_data/downloaded_SRA/GSE_samples/*.fastq.gz
+'fastqc' --threads 6 --outdir=my_data/qc_first/ my_data/samples/*.fastq.gz
 
-for file in my_data/downloaded_SRA/GSE_samples/*.fastq.gz; 
-do ./spar_prepare/smrna_adapter_cut.sh $file 6; 
+for file in my_data/samples/*.fastq.gz;  
+do 
+./spar_prepare/smrna_adapter_cut.sh $file 6; 
 done
 
-mkdir my_data/downloaded_SRA/GSE_samples/qc_after
+mkdir my_data/samples/qc_after
 
-'fastqc' --threads 6 --outdir=my_data/qc_after/ my_data/downloaded_SRA/GSE_samples/*.trimmed.fastq.gz
+'fastqc' --threads 6 --outdir=my_data/qc_after/ my_data/samples/*.trimmed.fastq.gz
 
 exit
 ```
