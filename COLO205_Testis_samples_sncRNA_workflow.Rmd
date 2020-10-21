@@ -71,15 +71,15 @@ docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
 # create the index
 salmon index -t ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.fa -i genome_transc_human/ncRNA_Central_piRNAB_hg38_index -k 15 -p 10
 
-mkdir my_data/smallRNA-breast-cancer/GSE68246/quants/
+mkdir my_data/quants/
 # run the samples
 
 #!/bin/bash
  
-for fn in my_data/smallRNA-breast-cancer/GSE68246/GSE_samples/*trimmed.fastq.gz; 
-do samp=`basename ${fn}`; 
-echo "Processing sample ${samp}";  
-salmon quant -i my_data/genome_transc_human/ncRNA_Central_piRNAB_hg38_index -l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 6 --validateMappings --writeMappings=my_data/smallRNA-breast-cancer/GSE68246/quants/${samp}.sam -o my_data/smallRNA-breast-cancer/GSE68246/quants/${samp}_quant;
+for fn in my_data/testis_colo_pub_workflow/samples/*trimmed.fastq.gz;  
+do 
+samp=`basename ${fn}`;  echo "Processing sample ${samp}";   
+salmon quant -i my_data/genome_transc_human/ncRNA_Central_piRNAB_hg38_index -l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 6 --validateMappings --writeMappings=my_data/testis_colo_pub_workflow/quants/${samp}.sam -o my_data/testis_colo_pub_workflow/quants/${samp}_quant;
 done
 
 #save as bam files
