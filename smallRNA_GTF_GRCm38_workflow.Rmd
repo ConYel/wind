@@ -199,16 +199,16 @@ seqinfo(sRNA)<- sInfo
 
 ```{r filter 100bp}
 tr_sRNA <- sRNA %>% 
-  as_tibble() %>% 
-  filter(width < 100) %>% 
+  as_tibble() %>% # [1,065,469] genomic ranges / [180,780] sRNA_ids
+  filter(width < 100) %>% # [962,711] GR / [94,653] sRNA_ids
   mutate(sRNA_id = str_remove(sRNA_id,"_10090")) %>% 
   as_granges() %>% 
   # keep info about the standard chromosomes
-  keepStandardChromosomes(pruning.mode = "coarse") %>% # [962.711] -> [947.408]
+  keepStandardChromosomes(pruning.mode = "coarse") %>% # [962,711] -> [947,408] GRs / [94,653] -> [94,644] sRNA_ids
   # remove the duplicated entries from RNAcentral
   as_tibble() %>% 
   unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
-  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRanges [947.408] -> [929.158]
+  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRanges [947,408] -> [929,168] GRs / [94,644] -> [90,056] sRNA_ids
   separate(col = seq_s,into = c("seqnames","start","end","width","strand"),
     sep = "_") %>% 
   mutate(start = as.numeric(start),
@@ -263,7 +263,7 @@ transcripts_GR <- transcripts_GR %>%
 
 ```{r import piRNABank}
 piRNAbank_mm10 <- Biostrings::readDNAStringSet("mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.fasta")
-piRNAbank_mm10_tib <- piRNAbank_mm10 %>%
+piRNAbank_mm10_tib <- piRNAbank_mm10 %>% # 39,380 sequences
   as.character() %>% 
   enframe(value = "seq_piBn") %>% 
   mutate(sRNA_type ="piRNA",
@@ -276,10 +276,10 @@ piRNAbank_mm10_tib <- piRNAbank_mm10 %>%
 # piRNABank. import the granges and change it -----
   piRNAbank_mm10_ranges <- read_bed("mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.bed") %>% 
   as_tibble() %>% 
-  arrange(desc(width)) %>% 
-  filter(width < 100) %>% 
+  arrange(desc(width)) %>% # [55,905] GRs / [39,380] sequences
+  filter(width < 100) %>% # [55,905] -> [55,903] GRs / [39,380] sequences
   as_granges() %>% 
-  keepStandardChromosomes(pruning.mode = "coarse")
+  keepStandardChromosomes(pruning.mode = "coarse")# [55,903] -> [54,677] GRs / [39,380]seq
 
 transcripts_pi_mm10 <- Views(BSgenome.Mmusculus.UCSC.mm10, piRNAbank_mm10_ranges) %>%
   as_granges() %>%
@@ -288,7 +288,7 @@ transcripts_pi_mm10 <- Views(BSgenome.Mmusculus.UCSC.mm10, piRNAbank_mm10_ranges
 
 # we need to apply a second width filter at 68 
 # as we know that piRNAs are ~32 base pairs
-transcripts_pi_mm10 <- transcripts_pi_mm10 %>% filter(width < 68)
+transcripts_pi_mm10 <- transcripts_pi_mm10 %>% filter(width < 68) # [54,677] -> [54,676] GRs / [39,380] names, [39,691] sequences
 transcripts_pi_mm10 %>% count(name) %>% nrow #> 39380 piRNAs from piRNABANK
 
 # checking sequences of alignments with lower length
@@ -316,7 +316,7 @@ transcripts_pi_mm10_clean <- transcripts_pi_mm10 %>%
   left_join(piRNAbank_mm10_tib) %>% 
   arrange(desc(width)) %>% 
   mutate(sequences_true = (dna == seq_piBn)) %>% 
-  filter(sequences_true == TRUE) %>% 
+  filter(sequences_true == TRUE) %>% # [54,676] -> [54,014] GRs / [39,380] -> [39,380] sequences 
   select(-score, -seq_piBn, -bpairs_piR, -sequences_true) %>% 
   unite(col = "seq_piBNK",seqnames:strand, sep = "_")
 
