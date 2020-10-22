@@ -509,26 +509,26 @@ function_prep_hist <- function(dgl_norm_data, annot_gtf){
 
 smallRNA_seqs <- map2(norm_dgls, list(annot_tbl, annot_tbl), ~function_prep_hist(.x,.y))
 
-smallRNA_seqs[["fc"]] %>% 
-  count(gene_type, sort = T) %>% 
+smallRNA_seqs[["fc"]] %>% # create one also per group
+  dplyr::count(gene_type, sort = T) %>% 
   dplyr::rename("fc_n" = n) %>% 
   full_join( smallRNA_seqs[["salmon"]] %>% 
-  count(gene_type, sort = T) %>% 
+  dplyr::count(gene_type, sort = T) %>% 
   dplyr::rename("salmon_n" = n)) %>% 
   full_join(
     smallRNA_seqs[["fc"]] %>% 
     inner_join(smallRNA_seqs[["salmon"]] ) %>% 
-    count(gene_type, sort = T) %>% 
+    dplyr::count(gene_type, sort = T) %>% 
     dplyr::rename("common_n" = n)) %>% 
   full_join(
 smallRNA_seqs[["fc"]] %>% 
     anti_join(smallRNA_seqs[["salmon"]] ) %>% 
-    count(gene_type, sort = T) %>% 
+    dplyr::count(gene_type, sort = T) %>% 
     dplyr::rename("unique_FC_n" = n)) %>% 
    full_join(
 smallRNA_seqs[["salmon"]]  %>% 
     anti_join(smallRNA_seqs[["fc"]]) %>% 
-    count(gene_type, sort = T) %>% 
+    dplyr::count(gene_type, sort = T) %>% 
     dplyr::rename("unique_salmon_n" = n)) %>% 
   write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/stats_gene_types_ids.txt"))
 

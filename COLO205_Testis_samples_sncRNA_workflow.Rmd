@@ -156,7 +156,7 @@ fc <- featureCounts(files = list.BAM,
                     verbose = TRUE,
                     reportReads = "BAM",
                     reportReadsPath = "../testis_colo_pub_workflow/star") 
-fc %>% write_rds(str_glue("../testis_colo_pub_workflow/testis_colo205_{todate}.rds"))
+fc %>% write_rds(str_glue("../testis_colo_pub_workflow/feature_counts_testis_colo205_{todate}.rds"))
 ```
 
 Next we will follow the workflow of data_exploration_salmon_fc
