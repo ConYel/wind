@@ -205,11 +205,11 @@ tr_sRNA <- sRNA %>%
   mutate(sRNA_id = str_remove(sRNA_id,"_9606")) %>% 
   as_granges() %>% 
   # keep info about the standard chromosomes
-  keepStandardChromosomes(pruning.mode = "coarse") %>% # [162.958] -> [160.980] GRs / [44,556] -> [44,529] sRNA_ids
+  keepStandardChromosomes(pruning.mode = "coarse") %>% # [162,958] -> [160,980] GRs / [44,556] -> [44,529] sRNA_ids
   # remove the duplicated entries from RNAcentral
   as_tibble() %>% 
   unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
-  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRanges [160.980] -> [153.043] GRs / [44,529] -> [41,496] sRNA_ids
+  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRanges [160,980] -> [153,043] GRs / [44,529] -> [41,496] sRNA_ids
   separate(col = seq_s,
            into = c("seqnames","start","end","width","strand"),
            sep = "_") %>% 
