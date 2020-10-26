@@ -34,14 +34,14 @@ suppressPackageStartupMessages({
 })
 ```
 ## 2. Directory generation for the resulted files
-### Add date
+### i. Add date
 
 Used as an identifier for the folder 
 
 ```{r todate_of_analysis}
 todate <- format(Sys.time(), "%d_%b_%Y")
 ```
-### Make the directory for the results of the exploratory data analysis
+### ii. Make the directory for the results of the exploratory data analysis
 
 ```{r make dirs}
 my_basename <- "GSE68246" ## INPUT name of the folder
@@ -610,9 +610,10 @@ groups %>% map2(list(FC_groups),
   ggtitle(str_glue("FeatureCounts_{.x}")))  
 dev.off()
 ```
-# 18. Reads info and histograms
+## 18. Reads info and histograms
+### i. extract the information of length for reads
 
-```{bash histograms of reads}
+```{bash Reads info}
 ## filter for reads of 15-49 bases
 for file in my_data/spike_ins/star_results/*/*_sorted.bam; 
 do
@@ -637,7 +638,7 @@ echo "end:$(date)";
 done
 
 ## find length of reads from salmon
-for file in my_data/mouse_datasets/Torrela/half_experiments/quants/*.fastq.gz.sam;  
+for file in my_data/quants/*.fastq.gz.bam;  
 do 
 where_to_save=`dirname ${file}`;  
 regex=`basename ${file}`;  
@@ -651,9 +652,16 @@ done
 samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$3}'| grep -F -w -f my_data/piRNA_ids.txt  - | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_pirna.txt;
 
 ```
-## 19. ggplot for histograms
+### ii. make a txt file with the info
 
-```{r ggplots}
+```{r}
+library(tidyverse)
+list.files(path = "../genome_transc_human/quants", pattern = "hist_allRNA.txt",full.names = T) %>% 
+  vroom(col_names = F, id = "file", col_select = c("file", "X1", "X3"))
+```
+### iii. ggplot for histograms
+
+```{r ggplots hist reads}
 library(tidyverse)
 library(plyranges)
 #piRNAs_hist <- read_tsv("piRNAs_hist.txt")
@@ -663,7 +671,7 @@ library(plyranges)
   distinct(gene_id, .keep_all = T) %>% 
     mutate(gene_type = as_factor(gene_type))
 # FC and salmon files -------
-hist_files_fc <- list.files(path ="mouse_datasets/Torrela/complete_exp/star_results",
+hist_files_fc <- list.files(path ="mouse_datasets/star_results",
                          pattern = "_hist.txt", 
                          recursive = TRUE, full.names = TRUE) %>% 
     set_names(. %>% 
@@ -671,7 +679,7 @@ hist_files_fc <- list.files(path ="mouse_datasets/Torrela/complete_exp/star_resu
                 str_remove("_hist.txt")
               )
 
-hist_files_salmon <- list.files(path ="mouse_datasets/Torrela/half_experiments/quants",
+hist_files_salmon <- list.files(path ="mouse_datasets/quants",
                          pattern = "_hist_allRNA.txt", 
                          recursive = TRUE, full.names = TRUE)
 #FC reads info----
@@ -741,7 +749,7 @@ dgl_norm$featureCounts$TMM$counts %>%
   summarise(piRNAs_in_sample =sum(piRNA)) %>% 
   dplyr::rename(Category=name) %>% 
   left_join(FC_reads_info) %>% # save them on a txt
-write_tsv("mouse_datasets/Torrela/complete_exp/FC_reads_info.txt")
+write_tsv("mouse_datasets/FC_reads_info.txt")
 
 # FeatureCounts histograms of piRNAs------
 piRNA_DF_hist<- df_list %>% 
@@ -765,7 +773,7 @@ piRNA_DF_hist %>%
    
    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
 
-pdf(str_glue("mouse_datasets/Torrela/half_experiments/histograms_piRNA_reads_facets_fc.pdf"))
+pdf(str_glue("mouse_datasets/histograms_piRNA_reads_facets_fc.pdf"))
 df_list %>% imap(~.x %>%
            filter(str_detect(sncRNA, smallRNA_Categ_regex[["piRNA"]])) %>%
            group_by(Length,Alignment) %>%
@@ -923,7 +931,7 @@ test_mut_reads %>% head %>%
   mutate_at(vars(starts_with("V")), ~map_chr(.,get_gene_type)) 
 
 ```
-# 20. piRNA Targets
+## 19. piRNA Targets
 
 ```{r}
 library(plyranges)

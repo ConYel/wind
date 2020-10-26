@@ -699,7 +699,7 @@ fasta_gen_hg38 <- Biostrings::readDNAStringSet("human_data/hg38/GRCh38.primary_a
 
 spikes_Fasta <- spike$seq_RNA %>%
   DNAStringSet(start = rep(1,nrow(spike)), end = str_length(spike$seq_RNA)) %>% 
-  setNames(spike$names)  
+  setNames(spike$names)
 
 DNAStringSetList(spikes_Fasta,fasta_gen_hg38) %>% 
   unlist() %>% 
