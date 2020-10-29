@@ -1,0 +1,15 @@
+Status	GSM1666235_Aligned.sortedByCoord.out.bam	GSM1666236_Aligned.sortedByCoord.out.bam	GSM1666237_Aligned.sortedByCoord.out.bam	GSM1666238_Aligned.sortedByCoord.out.bam	GSM1666239_Aligned.sortedByCoord.out.bam	GSM1666240_Aligned.sortedByCoord.out.bam
+Assigned	5173211	23493948	2901220	3156865	6069570	6083323
+Unassigned_Unmapped	0	0	0	0	0	0
+Unassigned_Read_Type	0	0	0	0	0	0
+Unassigned_Singleton	0	0	0	0	0	0
+Unassigned_MappingQuality	0	0	0	0	0	0
+Unassigned_Chimera	0	0	0	0	0	0
+Unassigned_FragmentLength	0	0	0	0	0	0
+Unassigned_Duplicate	0	0	0	0	0	0
+Unassigned_MultiMapping	0	0	0	0	0	0
+Unassigned_Secondary	0	0	0	0	0	0
+Unassigned_NonSplit	0	0	0	0	0	0
+Unassigned_NoFeatures	9252426	41147324	7363989	20456120	29324572	29394770
+Unassigned_Overlapping_Length	99015	490356	152963	276275	493433	493171
+Unassigned_Ambiguity	0	0	0	0	0	0
