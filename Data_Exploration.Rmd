@@ -507,8 +507,14 @@ salmon_FC_cpm_union_grouped_top <- salmon_FC_cpm_union_grouped %>%
   slice_head(n = 100) %>% 
 
   all_exprs_cpm_TMM %>% 
+  mutate(method = if_else(method == "featureCounts", 
+                          true = "fc", 
+                          false = "salmon")) %>%
+  pivot_longer(cols = c(CM1:CM3)) %>% unite(col = "sample",c(name, method)) %>%
+  pivot_wider(names_from = "sample", 
+              values_from = "value") %>% 
   column_to_rownames("GeneIDs") %>% 
-  .[top100$sncRNA,] %>% 
+  .[salmon_FC_cpm_union_grouped_top$sncRNA,] %>% 
   as_tibble(rownames = "smallRNA") %>% write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/salmon_FC_cpm_union_top100.txt"))
 ```
 ## 16. Make histogram of length
