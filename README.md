@@ -4,4 +4,4 @@ characterise sequences from small-RNA sequencing to different databases
 of small non-coding RNA, and more precisely tackle the crucial issue regarding the piRNA annotation.
 
   
-  ![WIND_image](./Figure_workflow.jpg){height=600px width=300px}
+  ![WIND_image](./Figure_workflow.jpg =600x300)
