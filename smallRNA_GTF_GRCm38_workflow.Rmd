@@ -566,7 +566,7 @@ gtf_piB_RCentr %>%
 ```
 
 Following this workflow the files for annotation and quantification of small-RNA samples have been prepared. 
-Afterwards, the steps on the _[GSM3535476_workflow.pdf](https://github.com/ConYel/genome_transc_human/blob/master/GSM3535476_workflow.pdf)_ could be followed to perform pre-processing of the samples, alignment, quantification and calculation of transcript abundances.
+Afterwards, the steps of pre-processing of the samples, alignment, quantification and calculation of transcript abundances could be followed.
 
 ## 4. Provide extra information regarding genomic locations, genes, transcripts, for the gtf
 ### Load libraries
