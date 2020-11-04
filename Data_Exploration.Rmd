@@ -493,7 +493,7 @@ salmon_FC_cpm_union_grouped <- comp_FC_sal$salmon %>%
   full_join(comp_FC_sal$fc, by = "sncRNA") %>% 
   write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/salmon_FC_cpm_union_grouped.txt"))
 
-# piCK the 100 top expressed molecules between FC salmon and all groups
+# piCK the 100 top expressed molecules between FC salmon and all groups -----
 all_exprs_cpm_TMM <- list.files(recursive = T , 
            pattern = "norm_cpm_TMM_", 
            full.names = T) %>% 
@@ -502,15 +502,16 @@ all_exprs_cpm_TMM <- list.files(recursive = T ,
 
 salmon_FC_cpm_union_grouped_top <- salmon_FC_cpm_union_grouped %>% 
   filter(gene_type == "piRNA") %>% 
-  arrange(across(.fns = ~.x %>% desc ,
+  arrange(across(.fns = dplyr::desc,
                  .cols = ends_with(c("salmon","fc")))) %>% 
-  slice_head(n = 100) %>% 
+  slice_head(n = 100) 
 
   all_exprs_cpm_TMM %>% 
   mutate(method = if_else(method == "featureCounts", 
                           true = "fc", 
                           false = "salmon")) %>%
-  pivot_longer(cols = c(CM1:CM3)) %>% unite(col = "sample",c(name, method)) %>%
+  pivot_longer(cols = c(CM2:CM3)) %>% 
+    unite(col = "sample",c(name, method)) %>%
   pivot_wider(names_from = "sample", 
               values_from = "value") %>% 
   column_to_rownames("GeneIDs") %>% 
