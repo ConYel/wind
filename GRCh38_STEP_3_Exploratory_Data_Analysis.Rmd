@@ -45,7 +45,7 @@ todate <- format(Sys.time(), "%d_%b_%Y")
 
 ```{r make dirs}
 my_basename <- "GSE68246" ## INPUT name of the folder
-my_exp <- "br_cancer" ## INPUT name of the analysis
+my_exp <- "br_CSC_cancer" ## INPUT name of the analysis
 genome_input <- "hg38" ## INPUT genome version here
 my_exp_sal <- "salmon"
 my_exp_fc <- "featureCounts"
@@ -83,16 +83,6 @@ targets_file <- tibble(   ## INPUT targets file here
   group = as_factor(c(rep("MCF_7_Monolayer",3),rep("MCF_7_Spheroid",3))),
   batch = as_factor(c(1:3,1:3))
 )
-
-targets_file <- list.files(pattern = "SraRun",
-                           path = my_basename, full.names = T) %>% 
-  read_csv() %>% 
-  select(sample_name = Run, Genotype) %>% 
-  mutate(group = Genotype %>% 
-           str_remove(" .+") %>% 
-           str_remove("pri-") %>%
-           str_replace("-","_")%>% as_factor(),
-         batch = as_factor(1:9)) 
 
 ```
 ## 5. Make a DGElist object for salmon
@@ -152,7 +142,7 @@ dgl_fc <- DGEList(counts = fc$counts,
                norm.factors = rep(1,ncol(fc$counts)))
 
 # give colours to samples ----
-pal1 <- tibble(value = c("#1C1718","#B6854D", "#79402E","#FF0000",
+pal1 <- tibble(value = c("#E50B36","#D2CA1D", "#79402E","#FF0000",
   "#D8B70A","#02401B","#046C9A","#5B1A18")) %>%
   dplyr::slice(1:length(levels(as_factor(targets_file$group)))) %>%
   mutate(
@@ -217,15 +207,15 @@ function_filtering <- function(dgl_data, data_path){
     names %>% 
     map( ~ dgl_data[rownames(dgl_data$counts) %in%
       rownames(noifil[.x]),,keep.lib.sizes = FALSE] %>% 
-        write_rds(str_glue("{data_path}/dgl_{.x}_filt.rds"))
+        write_rds(str_glue("{data_path}/dgl_{.x}_filt_{str_remove(data_path,'.+/')}.rds"))
       )
   # filterwith EdgeR ----
   keep.exprs <- filterByExpr.DGEList(dgl_data, design = design)
   keep.exprs_2 <- filterByExpr.DGEList(dgl_data, design = design_2)
   dgl_filt <- dgl_data[keep.exprs,,keep.lib.sizes=FALSE] %>% 
-    write_rds(str_glue("{data_path}/dgl_filt_nobatch.rds"))
+    write_rds(str_glue("{data_path}/dgl_filt_nobatch_{str_remove(data_path,'.+/')}.rds"))
   dgl_filt_2 <- dgl_data[keep.exprs_2,,keep.lib.sizes=FALSE] %>% 
-    write_rds(str_glue("{data_path}/dgl_filt_batch.rds"))
+    write_rds(str_glue("{data_path}/dgl_filt_batch_{str_remove(data_path,'.+/')}.rds"))
   
   features_NOIS <- map(noifil, ~ .x %>%
       rownames() %>%
@@ -256,7 +246,7 @@ function_filtering <- function(dgl_data, data_path){
       nrow(common_edgeR_nobatch[[2]]),nrow(common_edgeR_batch[[2]])
     )
   ) %>% 
-    write_tsv(str_glue("{data_path}/filtering_info.txt"))
+    write_tsv(str_glue("{data_path}/filtering_info_{str_remove(data_path,'.+/')}.txt"))
   dgl_filt
 }
 
@@ -337,8 +327,8 @@ norm_dgls <- filtered_dgls %>%
   map2(.y = dat_path, ~function_norm(.x, .y))
 # save the list with all normalized values (edgeR and limma)-----
 norm_dgls %>%
-  map2(.y = dat_path, 
-    ~write_rds(.x,path=str_glue("{.y}/list_norm_dgls_{str_remove(.y,'.+/')}.rds")))
+  map2( .y = dat_path, 
+    ~write_rds(.x,file = str_glue("{.y}/list_norm_dgls_{str_remove(.y,'.+/')}.rds")))
 ```
 ## 12. Make h-clustering
 
@@ -499,7 +489,9 @@ comp_FC_sal <- map2(norm_dgls, list("_salmon", "_fc"), ~function_comp_groups(.x,
 #  write_tsv(str_glue("{str_remove(dat_path[1],'/.+')}/salmon_FC_1cpm_common_grouped.txt"))
 
 salmon_FC_cpm_union_grouped <- comp_FC_sal$salmon %>% 
+  left_join(mybiotypes %>% as_tibble(rownames="sncRNA")) %>% 
   full_join(comp_FC_sal$fc, by = "sncRNA") %>% 
+  select(sncRNA, gene_type, everything()) %>% 
   write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/salmon_FC_cpm_union_grouped.txt"))
 
 # piCK the 100 top expressed molecules between FC salmon and all groups -----
@@ -519,7 +511,7 @@ salmon_FC_cpm_union_grouped_top <- salmon_FC_cpm_union_grouped %>%
   mutate(method = if_else(method == "featureCounts", 
                           true = "fc", 
                           false = "salmon")) %>%
-  pivot_longer(cols = c(CM2:CM3)) %>% 
+  pivot_longer(cols = !c(method,GeneIDs)) %>% 
     unite(col = "sample",c(name, method)) %>%
   pivot_wider(names_from = "sample", 
               values_from = "value") %>% 
@@ -974,40 +966,5 @@ get_gene_type <- function(x){key_mIrna_pIrna %>%
 test_mut_reads %>% head %>% 
   mutate_at(vars(starts_with("V")), ~map_chr(.,get_gene_type)) 
 
-```
-## 19. piRNA Targets
-
-```{r}
-library(plyranges)
-library(tidyverse)
-#load the gtf of genes mm10
-ensembl_mm10 <- read_gff2("mouse_data/Mus_musculus.GRCm38.100.gtf.gz") %>% 
-  as_tibble() %>% 
-  select(type, gene_id, gene_name, gene_biotype, transcript_id, transcript_biotype, protein_id) %>% 
-  arrange(protein_id) %>% 
-  distinct(gene_id, transcript_id, .keep_all = T) %>% 
-  filter(!is.na(transcript_id))
-
-# Load the targets
-targets <- list.files(path = "mouse_data/targets_piRNA_mm10", pattern = ".UTR|CDS",full.names = T) %>% 
-  set_names(. %>% basename() %>% str_remove(".txt")) %>%
-  map(~read_tsv(.x,col_names = F) 
-  ) %>% 
-  bind_rows(.id = "id") %>%  
-  mutate(
-    condition = case_when(
-                          is.na(X8) ~ "Complete",
-                          str_detect(X8,",",negate = T) ~"MissMatch_1",
-                          TRUE ~ "multiple_MissMatch")
-    ) %>% 
-  select(id, piRNA = X1, X3, condition) %>% 
-  separate(X3, c("gene_id", "gene_id_v","transcript_id", "transcript_id_v") , sep = "\\|") %>% 
-  select(-c("gene_id_v","transcript_id_v")) %>% 
-  distinct(piRNA, transcript_id, .keep_all = T) %>% 
-  left_join(ensembl_mm10) %>% 
-  select(piRNA, condition, gene_name, transcript_id, everything()) %>% 
-  arrange(piRNA, transcript_id, gene_name)
-
-targets_all %>% write_tsv("mouse_data/gene_targets_piRNA_mm10.txt")
 ```
 
