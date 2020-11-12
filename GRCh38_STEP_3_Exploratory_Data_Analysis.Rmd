@@ -421,16 +421,15 @@ map2(norm_dgls, dat_path, ~function_MDS(.x,.y))
 ## modified from DESeq2::plotPCA
 ## https://github.com/mikelove/DESeq2/blob/master/R/plots.R
 
-# MAKE IF STATEMENT FOR LIMMA!!!!!!
-
-function_PCA <- function(dgl_norm_data, plot_path, norm_method="TMM", ntop=500){
+function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 500){
   library(DESeq2)
   # calculate the variance for each gene
   rv <- rowVars(dgl_norm_data[[norm_method]]$counts)
+  
   # select the ntop genes by variance
   select <- order(rv, decreasing=TRUE)[seq_len(min(ntop, length(rv)))]
 
-  # perform a PCA on the data in assay(x) for the selected genes
+  # perform a PCA on the data in dgl_norm_data[[norm_method]]$counts for the selected genes
   pca <- prcomp(t(dgl_norm_data[[norm_method]]$counts[select,]))
   
   # the contribution to the total variance for each component
@@ -442,12 +441,19 @@ function_PCA <- function(dgl_norm_data, plot_path, norm_method="TMM", ntop=500){
   # assembly the data for the plot
   d <- data.frame(PC1=pca$x[,1], PC2=pca$x[,2], group=group,
                   name=colnames(dgl_norm_data[[norm_method]]$counts))
-  # create batch if exist factor
+  
+  # create batch if exist 
   if(dgl_norm_data[[norm_method]]$samples$batch){
     d$batch <- dgl_norm_data[[norm_method]]$samples$batch %>% as_factor
-   p <-  ggplot(data=d, aes_string(x="PC1", y="PC2", color="group", shape="batch"))
+    p <-  ggplot(data=d, 
+                 aes_string(x="PC1", 
+                            y="PC2", 
+                            color="batch", 
+                            shape="group"))
   }else{
-  p <- ggplot(data=d, aes_string(x="PC1", y="PC2", color="group"))}
+  p <- ggplot(data=d, aes_string(x="PC1", y="PC2", shape="group"))
+  }
+  
   p <- p +
     geom_point(size=3) + 
     xlab(paste0("PC1: ",round(percentVar[1] * 100),"% variance")) +
@@ -455,7 +461,10 @@ function_PCA <- function(dgl_norm_data, plot_path, norm_method="TMM", ntop=500){
     coord_fixed()+
     theme_minimal()+
     labs(title=str_glue("PCA plot {norm_method}"))+
-    theme(plot.title = element_text(hjust = 0.5))
+    theme(plot.title = element_text(hjust = 0.5),
+          axis.text.x = element_text( face = "bold"),
+          axis.text.y = element_text( face = "bold"),
+          aspect.ratio = 1)
   
   # pdf
   par(mar=c(6,5,2,1)+ 0.1)
