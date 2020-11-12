@@ -158,7 +158,7 @@ fc <- featureCounts(files = list.BAM,
 fc %>% write_rds(str_glue("GSE68246/feature_counts_GSE68246_{todate}.rds"))
 ```
 
-Next we will follow the workflow of data_exploration_salmon_fc
+Next we will follow the instructions in STEP_3_Exploratory_Data_Analysis.Rmd 
 ## R Session Info
 ```{r session Info}
 sessionInfo()
