@@ -1,6 +1,6 @@
 ---
 title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
-subtitle: "Computational workflow for the creation of Gene transfer format file with small-RNA sequences, GRCh38"
+subtitle: "Computational workflow for the creation of Gene transfer format file with small RNA sequences, GRCh38"
 author: "Constantinos Yeles (Konstantinos Geles)"
 date: "`r format(Sys.Date(), '%a %b %d %Y')`"
 output:
@@ -20,8 +20,8 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ```
 
 # Introduction
-With the intent to annotate and quantify small-RNA sequence data (and in 
-particular piRNA) derived from Next-Generation Sequencing, a workflow has been implemented. For the generation of annotation files and results widely used tools of alignment, annotation, quantification and differential expression algorithms have been utilized. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight modifications can be applied to all small-RNA categories of interest.
+With the intent to annotate and quantify small RNA sequence data (and in 
+particular piRNA) derived from Next-Generation Sequencing, we have developed WIND. For the generation of annotation files and results, widely used tools of alignment, annotation, quantification and differential expression algorithms have been used. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight modifications can be applied to all small RNA categories of interest.
 
 To make it more versatile and reproducible, we adopted the _[containerization approach](https://www.docker.com/resources/what-container)_ as the software 
 deployment is fast, efficient, and potentially bug-free. It can be used in 

@@ -199,7 +199,7 @@ loaded via a namespace (and not attached):
 [41] assertthat_0.2.1 colorspace_1.4-1 stringi_1.4.6    lazyeval_0.2.2  
 [45] munsell_0.5.0    broom_0.5.5      crayon_1.3.4  
 ```
-## We work on : 
+## We have worked on : 
 ```{bash versions}
 [root@localhost GSE124507_brain_project]# cat /etc/*-release
 
