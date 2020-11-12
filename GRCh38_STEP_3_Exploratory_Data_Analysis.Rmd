@@ -84,6 +84,21 @@ targets_file <- tibble(   ## INPUT targets file here
   batch = as_factor(c(1:3,1:3))
 )
 
+# remake targets file TCGA
+targets_file <- tibble(   ## INPUT targets file here
+  file_name = files_salm,
+  sample_name = names(files_salm),
+  group = names(files_salm) %>% 
+    str_remove(".{13}") %>% 
+    str_remove("[:alpha:]?-.+"),
+  batch = names(files_salm) %>% 
+    str_remove(".{8}") %>% 
+    str_remove("-.+") %>% 
+    as_factor() ) %>% 
+  mutate(group = as_factor(case_when(
+    group == "01" ~ "Primary_Solid_Tumor",
+     group == "11" ~ "Solid_Tissue_Normal"
+  )))  
 ```
 ## 5. Make a DGElist object for salmon
 
