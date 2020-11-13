@@ -4,13 +4,13 @@ subtitle: "Computational workflow for the preprocessing of selected samples from
 author: "Constantinos Yeles (Konstantinos Geles)"
 date: "`r format(Sys.time(), '%a %b %d %Y')`"
 output:
-  pdf_document:
-    toc: yes
-    toc_depth: 3
   html_document:
     toc: yes
     toc_depth: 3
     theme: paper 
+  pdf_document:
+    toc: yes
+    toc_depth: 3
 editor_options:
   chunk_output_type: console
 ---

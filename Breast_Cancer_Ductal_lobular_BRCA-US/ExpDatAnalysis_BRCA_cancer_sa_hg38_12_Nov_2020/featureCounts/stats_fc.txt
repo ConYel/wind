@@ -1,0 +1,15 @@
+Status	TCGA-BH-A0BT-01A-11R-A12O-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-BH-A0BT-11A-21R-A12O-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-BH-A18L-01A-32R-A12C-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-BH-A18L-11A-42R-A12C-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-BH-A1FC-01A-11R-A13P-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-BH-A1FC-11A-32R-A13P-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-BH-A1FG-01A-11R-A13P-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-BH-A1FG-11B-12R-A13P-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-BH-A1FU-01A-11R-A14C-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-BH-A1FU-11A-23R-A14C-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-E9-A1N4-01A-11R-A14L-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-E9-A1N4-11A-33R-A14L-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-E9-A1N5-01A-11R-A14C-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-E9-A1N5-11A-41R-A14C-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-GI-A2C8-01A-11R-A16E-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-GI-A2C8-11A-22R-A16E-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-GI-A2C9-01A-11R-A21U-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam	TCGA-GI-A2C9-11A-22R-A21U-13_mirna_gdc_realn_Aligned.sortedByCoord.out.bam
+Assigned	3467875	6337007	3588901	4882430	2391682	4756242	5489834	6390152	7877346	5740507	4472148	18883783	3548231	3474398	16659691	7160336	6670711	12191935
+Unassigned_Unmapped	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Read_Type	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Singleton	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_MappingQuality	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Chimera	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_FragmentLength	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Duplicate	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_MultiMapping	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Secondary	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_NonSplit	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_NoFeatures	1211371	1820893	1350610	1785954	1550465	1223656	1508972	2512233	3785479	1969494	1201677	8494254	758729	1543907	5523113	8711371	3073203	4543966
+Unassigned_Overlapping_Length	37309	20840	21974	33138	35322	12972	12480	16215	48403	9261	18680	108749	11349	29478	21218	76143	30713	20531
+Unassigned_Ambiguity	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
