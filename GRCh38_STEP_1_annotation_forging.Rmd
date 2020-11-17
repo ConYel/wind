@@ -21,7 +21,7 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 
 # Introduction
 With the intent to annotate and quantify small RNA sequence data (and in 
-particular piRNA) derived from Next-Generation Sequencing, we have developed WIND. For the generation of annotation files and results, widely used tools of alignment, annotation, quantification and differential expression algorithms have been used. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight modifications can be applied to all small RNA categories of interest.
+particular piRNA) derived from Next-Generation Sequencing, we have developed wind. For the generation of annotation files and results, widely used tools of alignment, annotation, quantification and differential expression algorithms have been used. Although the workflow is focused particularly on piRNAs (as it is our main subject of research) with slight modifications can be applied to all small RNA categories of interest.
 
 To make it more versatile and reproducible, we adopted the _[containerization approach](https://www.docker.com/resources/what-container)_ as the software 
 deployment is fast, efficient, and potentially bug-free. It can be used in 
@@ -51,19 +51,19 @@ of reads from resulted aligned files,
 
 *  _[Salmon](https://www.nature.com/articles/nmeth.4197/)_ for transcript-level quantification,
 
-*  _[featureCounts](https://academic.oup.com/bioinformatics/article/30/7/923/232889)_ for transcript-level quantification 
+*  _[featureCounts](https://academic.oup.com/bioinformatics/article/30/7/923/232889)_ for transcript-level quantification. 
 
 Databases that have been used:
 
 *  _[piRNABank](http://pirnabank.ibab.ac.in/)_ for piRNA sequences,
 
-*  _[RNAcentral](https://rnacentral.org/)_ for smallRNA sequences
+*  _[RNAcentral](https://rnacentral.org/)_ for smallRNA sequences.
 
 # Workflow
-## 1. Acquisition and Preprocessing of the small ncRNA sequences
+## 1. Acquisition and Preprocessing of the small non-coding RNA (ncRNA) sequences
 ### i. Downloading the files for the generation of a Gene transfer format(gtf) 
 
-piRNA sequences for human were downloaded from piRNABank to enrich in piRNA sequences the 
+Human piRNA sequences were downloaded from piRNABank to enrich in piRNA sequences the 
 gtf file, and smallRNA genome coordinates(bed files) from RNAcentral have been acquired
 ```{bash download the Databases}
 # all the files and folders for the workflow are created in the working directory 
@@ -96,7 +96,7 @@ sed 's/U/T/g' my_data/human_data/human_pir.txt > my_data/human_data/pirnaBank_hu
 exit
 ```
 ### iii. Run docker and Load libraries
-
+with the command below we run the docker container for Rstudio 
 ```{bash Run docker bioc I}
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
@@ -114,7 +114,7 @@ suppressPackageStartupMessages({
 ```
 ### iv. Remove duplicated sequences
 
-In the piRNABank fasta duplicated sequences exist and are removed
+In the piRNABank fasta duplicated sequences exist and need to be removed
 ```{r remove duplicates}
 # import the fasta  ----
 pirnaB_hg19 <- Biostrings::readDNAStringSet("human_data/pirnaBank_human.fasta")
@@ -133,7 +133,7 @@ names(pirnaB_hg19) <- names(pirnaB_hg19) %>%
 pirnaB_hg19 %>% 
   Biostrings::writeXStringSet("human_data/piRNAbank_hg19_removed_duplicates.fa")
 ```
-
+exit the docker container
 ```{bash exit bioc}
 # exit docker container
 exit
@@ -171,12 +171,14 @@ bedtools bamtobed < my_data/piRNABank_human_hg38/piBnk38_sorted.bam > my_data/pi
 exit
 ```
 ## 2. Unification of pirnaBANK sequences and RNAcentral ncRNA sequences 
-### Run docker, load libraries
+### Run docker
 
 ```{bash Run docker bioc II}
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
 ```
+### i. Load libraries
+
 ```{r load the libraries II}
 suppressPackageStartupMessages({
   library('tidyverse') 
@@ -185,7 +187,7 @@ suppressPackageStartupMessages({
   library("BSgenome.Hsapiens.UCSC.hg38")
 })
 ```
-### i. RNAcentral. import RNAcentral file 
+### ii. RNAcentral. import RNAcentral file 
 
 ```{r import RNAcentral}
 sRNA <- read_bed("human_data/homo_sapiens.GRCh38.bed.gz") %>% 
@@ -196,11 +198,11 @@ sInfo <- Seqinfo(genome="hg38")
 seqlevels(sInfo) <- seqlevels(sRNA)
 seqinfo(sRNA)<- sInfo
 ```
-### ii. RNAcentral. filtering for sequences smaller than 100 bps
+### iii. RNAcentral. filtering for sequences smaller than 100 nucleotides
 
 ```{r filter 100bp}
 tr_sRNA <- sRNA %>% 
-  as_tibble() %>% # [602,197] genomic ranges / [446,265] sRNA_ids
+  as_tibble() %>% # [602,197] genomic ranges (GR) / [446,265] sRNA_ids
   filter(width < 100) %>% # [162,958] GR / [44,556] sRNA_ids
   mutate(sRNA_id = str_remove(sRNA_id,"_9606")) %>% 
   as_granges() %>% 
@@ -209,7 +211,7 @@ tr_sRNA <- sRNA %>%
   # remove the duplicated entries from RNAcentral
   as_tibble() %>% 
   unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
-  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRanges [160,980] -> [153,043] GRs / [44,529] -> [41,496] sRNA_ids
+  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRs [160,980] -> [153,043] GRs / [44,529] -> [41,496] sRNA_ids
   separate(col = seq_s,
            into = c("seqnames","start","end","width","strand"),
            sep = "_") %>% 
@@ -223,7 +225,7 @@ biotypes <- tr_sRNA %>%
   select(sRNA_id,gene_type) %>% 
   distinct(sRNA_id, .keep_all = T)
 ```
-### iii. RNAcentral. keep sequence information
+### iv. RNAcentral. keep sequence information
 
 ```{r keep seq info}
 transcripts_human <- Views(BSgenome.Hsapiens.UCSC.hg38, tr_sRNA)
@@ -243,7 +245,7 @@ fasta_tr_hs_tbl %>%
   filter(duplicated(hg38)) %>%
   count(hg38,sort = TRUE) # 27 duplicated sequences
 
-### duplicates between sequences and genomic locations(GRanges)----
+### duplicates between sequences and genomic locations(GRs)----
 # make a tibble with all GR, seq and ids
 transcripts_GR <- transcripts_human %>% 
     as_granges() %>% 
@@ -261,7 +263,7 @@ transcripts_GR <- transcripts_GR %>%  # [153.043] GRs / [41,496] sRNA_id -> [43,
   left_join(uniq_seq)
 
 ```
-### iv. piRNABank. import the aligned to genome fasta
+### v. piRNABank. import the piRNA sequences aligned to genome fasta
 
 ```{r import piRNABank}
 piRNAbank_hg38 <- Biostrings::readDNAStringSet("piRNABank_human_hg38/piBnk38_sorted.fasta")
@@ -273,10 +275,10 @@ piRNAbank_hg38_tib <- piRNAbank_hg38 %>% # 23,120 sequences
     bpairs_piR = str_length(seq_piBn)) %>% 
   arrange(desc(bpairs_piR))
 ```
-### v. piRNAbank. make Genomic Ranges and remove duplicates from hg38 
+### vi. piRNAbank. make Genomic Ranges and remove duplicates from hg38 
 
-```{r import piRNABank GRanges}
-# piRNABank. import the granges and change it -----
+```{r import piRNABank GRs}
+# piRNABank. import the Genomic Ranges and filter them -----
   piRNAbank_hg38_ranges <- read_bed("piRNABank_human_hg38/piBnk38_sorted.bed") %>% 
   as_tibble() %>% 
   arrange(desc(width)) %>% # [46,552] GRs / 23,120 sequences
@@ -325,8 +327,8 @@ transcripts_pi_hg38_clean <- transcripts_pi_hg38 %>%
 
 transcripts_pi_hg38_clean %>% count(name) %>% nrow #>  23,116 piRNAs final piRNABANK
 ```
-### vi. RNAcentral. + piRNABank. make annotation tibble
-
+### vii. RNAcentral. + piRNABank. make annotation tibble
+create a tibble with that information of RNAcentral and piRNAbank sequences and IDs
 ```{r annotation tibble}
 hg38_piBAnk_RCent <- transcripts_GR %>% 
   left_join(piRNAbank_hg38_tib, by = c("dna" = "seq_piBn")) 
@@ -424,9 +426,9 @@ concated_hg38_piBAnk %>% filter(sRNA_id == "URS00001B5714")
 transcripts_pi_hg38_clean %>%  filter(name == "hsa_piR_011289_DQ585240")
 tr_test %>% filter(sRNA_id == "URS00001B5714")
 ```
-### vii. RNAcentral + piRNABank. generation of Granges
+### viii. RNAcentral + piRNABank. generation of GRs
 
-```{r GRanges generation}
+```{r GRs generation}
 concated_hg38_piBAnk  # df with combined sequences piRNAbank+RNAcentral
 transcripts_pi_hg38_clean # has all alignments from piRNAbank 
 tr_sRNA # has the ranges with less than 100 bp from RNAcentral
@@ -551,10 +553,10 @@ gtf_piB_RCentr %>%
 ```
 
 Following this workflow the files for annotation and quantification of smallRNA samples have been prepared. 
-Afterwards, the steps on the pre-processing of the samples, alignment, quantification and calculation of transcript abundances should be followed.
+Afterwards, the steps in the pre-processing of the samples, alignment, quantification and calculation of transcript abundances should be followed.
 
 ## 4. Provide extra information regarding genomic locations, genes, transcripts, for the gtf
-### Load libraries
+### i. Load libraries
 
 ```{r bumphunter libraries}
 suppressPackageStartupMessages({
@@ -565,7 +567,7 @@ library('BiocParallel')
 library('stats')   
 })
 ```
-### Import regions of transcripts
+### ii. Import regions of transcripts
 
 ```{r transcript regions bumphunter}
 genes <- annotateTranscripts(TxDb.Hsapiens.UCSC.hg38.knownGene, annotation="org.Hs.eg.db") %>% 
@@ -596,7 +598,7 @@ mt_param <- MulticoreParam()
 # we will work with 10 workers 
 mt_param <- MulticoreParam(workers = 10)
 
-# simple function which takes lists of Granges and the chromosome 
+# simple function which takes lists of Grs and the chromosome 
 # name to select from each list
 matchGenes_fun <- function(our_Grs, genes_GRs){
   suppressPackageStartupMessages({
@@ -772,7 +774,7 @@ samtools view -h -@ 6 ${file} | awk 'length($10) > 14 && length($10) < 50 || $1 
 echo "end:$(date)"; 
 done
 
-## find length of reads from STAR - FeatureCounts
+## find length of reads from STAR - featureCounts
 cut -f1 my_data/piRNAs_hist.txt > my_data/piRNA_ids.txt
 
 for file in my_data/spike_ins/star_results/*.featureCounts.bam; 

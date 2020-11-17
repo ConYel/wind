@@ -4,13 +4,13 @@ subtitle: "Computational workflow for the creation of Gene transfer format file 
 author: "Constantinos Yeles (Konstantinos Geles)"
 date: "`r format(Sys.Date(), '%a %b %d %Y')`"
 output:
+  pdf_document:
+    toc: yes
+    toc_depth: 3
   html_document:
     toc: yes
     toc_depth: 3
     theme: paper 
-  pdf_document:
-    toc: yes
-    toc_depth: 3
 editor_options:
   chunk_output_type: console
 ---
@@ -21,7 +21,7 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 
 # Introduction
 With the intent to annotate and quantify small RNA sequence data (and in 
-particular piRNA) derived from Next-Generation Sequencing, we have developed WIND. For the generation of annotation files and results, widely used tools of alignment, annotation, quantification and differential expression algorithms have been used. Although the workflow is focused particularly on piRNAs (as is our main subject of research) with slight modifications can be applied to all small RNA categories of interest.
+particular piRNA) derived from Next-Generation Sequencing, we have developed wind. For the generation of annotation files and results, widely used tools of alignment, annotation, quantification and differential expression algorithms have been used. Although the workflow is focused particularly on piRNAs (as it is our main subject of research) with slight modifications can be applied to all small RNA categories of interest.
 
 To make it more versatile and reproducible, we adopted the _[containerization approach](https://www.docker.com/resources/what-container)_ as the software 
 deployment is fast, efficient, and potentially bug-free. It can be used in 
@@ -54,19 +54,19 @@ of reads from resulted aligned files,
 
 *  _[Salmon](https://www.nature.com/articles/nmeth.4197/)_ for transcript-level quantification,
 
-*  _[featureCounts](https://academic.oup.com/bioinformatics/article/30/7/923/232889)_ for transcript-level quantification 
+*  _[featureCounts](https://academic.oup.com/bioinformatics/article/30/7/923/232889)_ for transcript-level quantification. 
 
 Databases that have been used:
 
 *  _[piRNABank](http://pirnabank.ibab.ac.in/)_ for piRNA sequences,
 
-*  _[RNAcentral](https://rnacentral.org/)_ for smallRNA sequences
+*  _[RNAcentral](https://rnacentral.org/)_ for smallRNA sequences.
 
 # Workflow
-## 1. Acquisition and Preprocessing of the small ncRNA sequences
+## 1. Acquisition and Preprocessing of the small non-coding RNA (ncRNA) sequences
 ### i. Downloading the files for the generation of a Gene transfer format (gtf) 
 
-piRNA sequences for mouse were downloaded from piRNABank to enrich in piRNA sequences the gtf file, and small-RNA genome coordinates (bed files) from RNACentral have been acquired
+Mouse piRNA sequences were downloaded from piRNABank to enrich in piRNA sequences the gtf file, and small-RNA genome coordinates (bed files) from RNACentral have been acquired
 ```{bash download the Databases}
 # all the files and folders for the workflow are created in the working directory 
 # plus the results of the analysis
@@ -96,7 +96,7 @@ sed 's/U/T/g' my_data/mouse_data/mouse_pir.txt > my_data/mouse_data/pirnaBank_mo
 exit
 ```
 ### iii. Run docker and Load libraries
-
+with the command below we run the docker container for Rstudio 
 ```{bash Run docker bioc I}
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
@@ -113,6 +113,7 @@ suppressPackageStartupMessages({
 ```
 ### iv. Remove duplicated sequences
 
+In the piRNABank fasta duplicated sequences exist and need to be removed
 ```{r remove duplicates}
 pirnaB_mm8 <- Biostrings::readDNAStringSet("mouse_data/pirnaBank_mouse.fasta")
 pirnaB_mm8 %>% length() ## >[1] 1399813
@@ -131,7 +132,7 @@ pirnaB_mm8 %>%
   Biostrings::writeXStringSet("mouse_data/pirnaB_mm8_removed_duplicates.fa" )
 ```
 
-
+exit the docker container
 ```{bash exit bioc}
 # exit docker container
 exit
@@ -169,12 +170,14 @@ bedtools bamtobed < my_data/mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.ba
 exit
 ```
 ## 2. Unification of pirnaBANK sequences and RNAcentral ncRNA sequences 
-### Run docker, load libraries
+### Run docker
 
 ```{bash Run docker bioc II}
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
 ```
+### i. Load libraries
+
 ```{r load the libraries II}
 suppressPackageStartupMessages({
   library('tidyverse') 
@@ -183,7 +186,7 @@ suppressPackageStartupMessages({
   library("BSgenome.Mmusculus.UCSC.mm10")
 })
 ```
-### i. RNAcentral. import RNAcentral file 
+### ii. RNAcentral. import RNAcentral file 
 
 ```{r import RNAcentral}
 sRNA <- read_bed("mouse_data/mus_musculus.GRCm38.bed.gz") %>% 
@@ -194,12 +197,12 @@ sInfo <- Seqinfo(genome="mm10")
 seqlevels(sInfo) <- seqlevels(sRNA)
 seqinfo(sRNA)<- sInfo
 ```
-### ii. RNAcentral. filtering for sequences smaller than 100 bps
+### iii. RNAcentral. filtering for sequences smaller than 100 bps
 
 ```{r filter 100bp}
 tr_sRNA <- sRNA %>% 
-  as_tibble() %>% # [1,065,469] genomic ranges / [180,780] sRNA_ids
-  filter(width < 100) %>% # [962,711] GR / [94,653] sRNA_ids
+  as_tibble() %>% # [1,065,469] genomic ranges(GR) / [180,780] sRNA_ids
+  filter(width < 100) %>% # [962,711] GRs / [94,653] sRNA_ids
   mutate(sRNA_id = str_remove(sRNA_id,"_10090")) %>% 
   as_granges() %>% 
   # keep info about the standard chromosomes
@@ -207,7 +210,7 @@ tr_sRNA <- sRNA %>%
   # remove the duplicated entries from RNAcentral
   as_tibble() %>% 
   unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
-  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRanges [947,408] -> [929,168] GRs / [94,644] -> [90,056] sRNA_ids
+  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRs [947,408] -> [929,168] GRs / [94,644] -> [90,056] sRNA_ids
   separate(col = seq_s,into = c("seqnames","start","end","width","strand"),
     sep = "_") %>% 
   mutate(start = as.numeric(start),
@@ -220,7 +223,7 @@ biotypes <- tr_sRNA %>%
   select(sRNA_id,gene_type) %>% 
   distinct(sRNA_id, .keep_all = T)
 ```
-### iii. RNAcentral. keep sequence information
+### iv. RNAcentral. keep sequence information
 
 ```{r keep seq info}
 transcripts_mouse <- Views(BSgenome.Mmusculus.UCSC.mm10, tr_sRNA)
@@ -240,7 +243,7 @@ fasta_tr_ms_tbl %>%
   filter(duplicated(mm10)) %>%
   count(mm10,sort = TRUE) 
 
-#  duplicates between sequences and genomic locations(GRanges)-----
+#  duplicates between sequences and genomic locations(GRs)-----
 ## make a tibble with all GR, seq and ids
 transcripts_GR <- transcripts_mouse %>% 
     as_granges() %>% 
@@ -258,7 +261,7 @@ uniq_seq <- transcripts_GR  %>%
 transcripts_GR <- transcripts_GR %>% 
   left_join(uniq_seq)
 ```
-### iv. piRNABank. import the aligned to genome fasta
+### v. piRNABank. import the aligned to genome fasta
 
 ```{r import piRNABank}
 piRNAbank_mm10 <- Biostrings::readDNAStringSet("mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.fasta")
@@ -269,10 +272,10 @@ piRNAbank_mm10_tib <- piRNAbank_mm10 %>% # 39,380 sequences
     bpairs_piR = str_length(seq_piBn)) %>% 
   arrange(desc(bpairs_piR))
 ```
-### v. piRNAbank. make Genomic Ranges and remove duplicates from GRCm38 
+### vi. piRNAbank. make Genomic Ranges and remove duplicates from GRCm38 
 
 ```{r import piRNABank GRanges}
-# piRNABank. import the granges and change it -----
+# piRNABank. import the granges and filter them -----
   piRNAbank_mm10_ranges <- read_bed("mouse_data/piRNABank_mouse_mm10/piBnk_mm10_sorted.bed") %>% 
   as_tibble() %>% 
   arrange(desc(width)) %>% # [55,905] GRs / [39,380] sequences
@@ -349,8 +352,8 @@ concated_mm10_piBAnk %>% filter(sRNA_id == "URS00003AC5A0")
 transcripts_pi_mm10_clean %>%  filter(name == "mmu_piR_014163_DQ692225")
 tr_test %>% filter(sRNA_id == "URS00003AC5A0")
 ```
-### vi. RNAcentral. + piRNABank. make annotation tibble
-
+### vii. RNAcentral. + piRNABank. make annotation tibble
+create a tibble with that information of RNAcentral and piRNAbank sequences and IDs
 ```{r annotation tibble}
 mm10_piBAnk_RCent <- transcripts_GR %>% 
   left_join(piRNAbank_mm10_tib, by = c("dna" = "seq_piBn"))
@@ -444,7 +447,7 @@ fasta_tr_ms_tbl %>%
   filter(mm10 %in% dupl_seqs$dna)
 
 ```
-### vii. RNAcentral + piRNABank. generation of GRanges
+### viii. RNAcentral + piRNABank. generation of GRanges
 
 ```{r GRanges generation}
 concated_mm10_piBAnk  # df with combined sequences piRNAbank+RNAcentral
@@ -565,10 +568,10 @@ gtf_piB_RCentr %>%
 ```
 
 Following this workflow the files for annotation and quantification of small-RNA samples have been prepared. 
-Afterwards, the steps of pre-processing of the samples, alignment, quantification and calculation of transcript abundances could be followed.
+Afterwards, the steps in the  pre-processing of the samples, alignment, quantification and calculation of transcript abundances could be followed.
 
 ## 4. Provide extra information regarding genomic locations, genes, transcripts, for the gtf
-### Load libraries
+### i. Load libraries
 
 ```{r bumphunter libraries}
 suppressPackageStartupMessages({
@@ -579,7 +582,7 @@ library('BiocParallel')
 library('stats')   
 })
 ```
-### import regions of transcripts
+### ii. import regions of transcripts
 
 ```{r transcript regions bumphunter}
 genes <- annotateTranscripts(TxDb.Mmusculus.UCSC.mm10.knownGene, annotation="org.Mm.eg.db") %>% 
