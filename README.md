@@ -1,7 +1,7 @@
 ---
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
 # wind: wORKFLOW FOR PiRNAs AnD BEYONd
 We have developed a bioinformatics workflow that could reliably 
