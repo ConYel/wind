@@ -1,7 +1,7 @@
 ---
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 # wind: wORKFLOW FOR PiRNAs AnD BEYONd
 We have developed a bioinformatics workflow that could reliably 
@@ -13,7 +13,6 @@ The workflow consists of three significant steps:
 2. Pre-processing & Quantification: pre-processing, alignment and quantification of the reads assigned to sncRNAs (using a dual approach: genomic and transcriptomic analysis).  
 3. Exploratory data analysis: result exploration of both quantification methods in parallel and Differential Expression (DE) with two different methodologies (edgeR and limma-voom).
 
-
-<div>
-<img src="./Figure_workflow.jpg" width="300" height="600"/>
-</div>
+Logo | workflow
+--- | ---
+![](./WIND_LOGO.png){height=400px width=400px} | ![](./Figure_workflow.jpg){height=700px width=400px}
