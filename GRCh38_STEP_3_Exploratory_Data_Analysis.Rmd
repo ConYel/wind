@@ -4,13 +4,13 @@ subtitle: "Computational workflow for Data Exploration resulted from smallRNA-se
 author: "Constantinos Yeles (Konstantinos Geles)"
 date: "`r format(Sys.time(), '%a %b %d %Y')`"
 output:
-  pdf_document:
-    toc: yes
-    toc_depth: 3
   html_document:
     toc: yes
     toc_depth: 3
     theme: paper 
+  pdf_document:
+    toc: yes
+    toc_depth: 3
 editor_options:
   chunk_output_type: console
 ---
@@ -18,6 +18,7 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ```
+Following the step 2 we are working again on the docker of Rstudio loaded before.
 ## 1. Load libraries
 
 ```{r load libraries}
@@ -71,18 +72,49 @@ txi <- tximport::tximport(files_salm, type = "salmon",
 If you use a public dataset you can download it from SRA RUN selector Metadata
 or you can create it.
 It has to have at least three columns with the column names: "sample_name","group","batch"
-Here we show both ways although we need to manually add some columns in the
+Here we show both ways although we need to manipulate some columns in the
 metadata of SRA run selector.
 
 ```{r targets file}
-# make the targets object ----
 # INPUT targets file
-targets_file <- tibble(   ## INPUT targets file here
+## table for GSE68246
+targ_path <- dir( path = my_basename, 
+                  pattern = "Sra",
+                  full.names = T,
+                  recursive = TRUE)
+
+targets_file <- read_csv(targ_path) %>% 
+  select(Run, source_name, sample_name=`Sample Name`) %>%
+  distinct(source_name, sample_name) %>% 
+  mutate(
+    group = source_name %>% str_replace("MCF-7 ","MCF_7_"),    
+    batch = rep(1:3,2) ) %>% 
+  mutate_all(as_factor) %>% 
+  select(-source_name)
+
+# make the table from scratch-----
+## table for GSE68246
+targets_file <- tibble( 
   file_name = files_salm,
   sample_name = names(files_salm),
   group = as_factor(c(rep("MCF_7_Monolayer",3),rep("MCF_7_Spheroid",3))),
-  batch = as_factor(c(1:3,1:3))
+  batch = as_factor(rep(1:3,2))
 )
+## table for TCGA_BRCA
+targets_file <- tibble(
+  file_name = files_salm,
+  sample_name = names(files_salm),
+  group = names(files_salm) %>% 
+    str_remove(".{13}") %>% 
+    str_remove("[:alpha:]?-.+"),
+  batch = names(files_salm) %>% 
+    str_remove(".{8}") %>% 
+    str_remove("-.+") %>% 
+    as_factor() ) %>%
+  mutate(group = as_factor(case_when(
+    group == "01" ~ "Primary_Solid_Tumor",
+     group == "11" ~ "Solid_Tissue_Normal"
+  ))) 
 
 ```
 ## 5. Make a DGElist object for salmon
@@ -115,7 +147,7 @@ dgl_salmon <- DGEList(cts, samples = targets_file) %>%
 # remove objects.
 rm(cts, normCts, normMat, txi)
 ```
-## 6. Import the FeatureCounts object and make a DGElist object
+## 6. Import the featureCounts object and make a DGElist object
 
 ```{r DGElist FeatureCounts}
 # load the rds from featureCOunts----
@@ -288,7 +320,7 @@ function_norm <- function(dgl_fil_data, data_path){
   norm_method <- list("none", "TMM", "TMMwsp", "RLE") %>% 
     set_names(.)
   edger_norm <- map(norm_method, ~calcNormFactors(dgl_fil_data, method = .x))
-  # voom  ----
+  # limma-voom  ----
   pdf(str_glue("{data_path}/voom_plots_{str_remove(data_path,'.+/')}.pdf"))
   voom_norm <-  edger_norm[1:3] %>% 
     map2(.y = c("quantile", rep("none",2)),
@@ -296,7 +328,7 @@ function_norm <- function(dgl_fil_data, data_path){
         plot = TRUE, normalize.method = .y)) %>% 
     set_names("voom_Quantile","voom_TMM","voom_TMMwsp")
   dev.off()
-  # voom with quality weights ----
+  # limma-voom with quality weights ----
   pdf(str_glue("{data_path}/voom_quality_weights_plots_{str_remove(data_path,'.+/')}.pdf"))
   voom_norm_QW <- edger_norm[1:3] %>% 
     map2(.y = c("quantile", rep("none",2)),
@@ -325,7 +357,7 @@ function_norm <- function(dgl_fil_data, data_path){
 
 norm_dgls <- filtered_dgls %>%
   map2(.y = dat_path, ~function_norm(.x, .y))
-# save the list with all normalized values (edgeR and limma)-----
+# save the list with all normalized values (edgeR and limma-voom)-----
 norm_dgls %>%
   map2( .y = dat_path, 
     ~write_rds(.x,file = str_glue("{.y}/list_norm_dgls_{str_remove(.y,'.+/')}.rds")))
@@ -432,7 +464,7 @@ function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 5
   d <- data.frame(PC1=pca$x[,1], PC2=pca$x[,2], group=group,
                   name=colnames(dgl_norm_data[[norm_method]]$counts))
   
-  # create batch if exist 
+  # create batch if it exists
   if(dgl_norm_data[[norm_method]]$samples$batch){
     d$batch <- dgl_norm_data[[norm_method]]$samples$batch %>% as_factor
     p <-  ggplot(data=d, 
@@ -625,7 +657,7 @@ groups %>% map2(list(salmon_groups),
   str_sub(1,15) %>% 
   ggseqlogo(method = 'prob', font="roboto_regular") +
   ggtitle(str_glue("Salmon_{.x}")))  
-#featurecounts
+#featureCounts
 groups %>% map2(list(FC_groups),
   ~.y %>% 
     filter(gene_type == "piRNA") %>%
@@ -638,7 +670,8 @@ dev.off()
 ```
 ## 18. Reads info and histograms
 ### i. extract the information of length for reads
-
+Here we need to collapse the the information that it can be extracted from the bam files
+of aligned reads, we use the docker of sncrna_workflow to perform it.
 ```{bash Reads info}
 ## filter for reads of 15-49 bases
 for file in my_data/star_results/*/*_sorted.bam; 
@@ -651,7 +684,7 @@ samtools view -h -@ 6 ${file} | awk 'length($10) > 14 && length($10) < 50 || $1 
 echo "end:$(date)"; 
 done
 
-## find length of reads from STAR - FeatureCounts
+## find length of reads from STAR - featureCounts
 #cut -f1 my_data/piRNAs_hist.txt > my_data/piRNA_ids.txt | grep -F -w -f my_data/piRNA_ids.txt  -
 
 for file in my_data/spike_ins/star_results/*.featureCounts.bam; 
@@ -675,12 +708,12 @@ samtools view  -@ 2 ${file} | awk 'BEGIN{FS=OFS="\t"}{print $1,length($10),$3}'|
 echo "end:$(date)"; 
 done
 
-## if was to make only for piRNA
+## if it was to make only for piRNA
 samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$3}'| grep -F -w -f my_data/piRNA_ids.txt  - | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_pirna.txt;
 
 ```
 ### ii. make a txt file with the info
-
+here we return to the Rstudio docker in order to perform the visualization
 ```{r}
 library(tidyverse)
 hist_all_RNA <- list.files(path = "../genome_transc_human/quants", 
@@ -701,7 +734,7 @@ library(plyranges)
   select(gene_id,gene_type) %>% 
   distinct(gene_id, .keep_all = T) %>% 
     mutate(gene_type = as_factor(gene_type))
-# FC and salmon files -------
+# featureCounts(FC) and salmon files -------
 hist_files_fc <- list.files(path ="mouse_datasets/star_results",
                          pattern = "_hist.txt", 
                          recursive = TRUE, full.names = TRUE) %>% 
@@ -756,7 +789,7 @@ reads_info_fc <- function(df, Categ_regex_list){
 }
 
 
-## read the hist files and mutate them 
+## read the hist files and add information about multi-mapped reads them 
 df_list <- hist_files_fc %>% 
   map(~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
   mutate(Length = as_factor(Length),
@@ -786,7 +819,7 @@ dgl_norm$featureCounts$TMM$counts %>%
   left_join(FC_reads_info) %>% # save them on a txt
 write_tsv("mouse_datasets/FC_reads_info.txt")
 
-# FeatureCounts histograms of piRNAs------
+# featureCounts histograms of piRNAs------
 piRNA_DF_hist<- df_list %>% 
   bind_rows(.id = "Sample") %>% 
   filter(sncRNA != "Not_assigned") %>% 
@@ -966,5 +999,11 @@ get_gene_type <- function(x){key_mIrna_pIrna %>%
 test_mut_reads %>% head %>% 
   mutate_at(vars(starts_with("V")), ~map_chr(.,get_gene_type)) 
 
+```
+
+Finally we exit the docker container
+```{bash exit docker}
+# exit docker container
+exit
 ```
 

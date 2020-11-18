@@ -389,13 +389,12 @@ summary {
 <h1 class="title toc-ignore">wind: wORKFLOW FOR PiRNAs AnD BEYONd</h1>
 <h3 class="subtitle">Computational workflow for Data Exploration resulted from smallRNA-seq</h3>
 <h4 class="author">Constantinos Yeles (Konstantinos Geles)</h4>
-<h4 class="date">Fri Nov 13 2020</h4>
+<h4 class="date">Wed Nov 18 2020</h4>
 
 </div>
 
 <div id="TOC">
 <ul>
-<li><a href="#load-libraries">1. Load libraries</a></li>
 <li><a href="#directory-generation-for-the-resulted-files">2. Directory generation for the resulted files</a><ul>
 <li><a href="#i.-add-date">i. Add date</a></li>
 <li><a href="#ii.-make-the-directory-for-the-results-of-the-exploratory-data-analysis">ii. Make the directory for the results of the exploratory data analysis</a></li>
@@ -403,7 +402,7 @@ summary {
 <li><a href="#import-the-salmon-files">3. Import the salmon files</a></li>
 <li><a href="#make-or-import-the-targets-file.">4. Make or import the targets file.</a></li>
 <li><a href="#make-a-dgelist-object-for-salmon">5. Make a DGElist object for salmon</a></li>
-<li><a href="#import-the-featurecounts-object-and-make-a-dgelist-object">6. Import the FeatureCounts object and make a DGElist object</a></li>
+<li><a href="#import-the-featurecounts-object-and-make-a-dgelist-object">6. Import the featureCounts object and make a DGElist object</a></li>
 <li><a href="#create-biodetection-plot-with-noiseq">7. Create biodetection plot with NOISeq</a></li>
 <li><a href="#create-the-design-matrix">8. Create the design matrix</a></li>
 <li><a href="#perform-various-filtering-methods-edger-noiseq">9. Perform various Filtering Methods: EdgeR, NOIseq</a></li>
@@ -423,8 +422,7 @@ summary {
 </ul>
 </div>
 
-<div id="load-libraries" class="section level2">
-<h2>1. Load libraries</h2>
+<p>Following the step 2 we are working again on the docker of Rstudio loaded before. ## 1. Load libraries</p>
 <pre class="r"><code>suppressPackageStartupMessages({
   library(&#39;tidyverse&#39;) 
   library(&#39;data.table&#39;)
@@ -436,7 +434,6 @@ summary {
   library(&#39;pheatmap&#39;)
   library(&#39;RColorBrewer&#39;)
 })</code></pre>
-</div>
 <div id="directory-generation-for-the-resulted-files" class="section level2">
 <h2>2. Directory generation for the resulted files</h2>
 <div id="i.-add-date" class="section level3">
@@ -470,15 +467,46 @@ txi &lt;- tximport::tximport(files_salm, type = &quot;salmon&quot;,
 </div>
 <div id="make-or-import-the-targets-file." class="section level2">
 <h2>4. Make or import the targets file.</h2>
-<p>If you use a public dataset you can download it from SRA RUN selector Metadata or you can create it. It has to have at least three columns with the column names: “sample_name”,“group”,“batch” Here we show both ways although we need to manually add some columns in the metadata of SRA run selector.</p>
-<pre class="r"><code># make the targets object ----
-# INPUT targets file
-targets_file &lt;- tibble(   ## INPUT targets file here
+<p>If you use a public dataset you can download it from SRA RUN selector Metadata or you can create it. It has to have at least three columns with the column names: “sample_name”,“group”,“batch” Here we show both ways although we need to manipulate some columns in the metadata of SRA run selector.</p>
+<pre class="r"><code># INPUT targets file
+## table for GSE68246
+targ_path &lt;- dir( path = my_basename, 
+                  pattern = &quot;Sra&quot;,
+                  full.names = T,
+                  recursive = TRUE)
+
+targets_file &lt;- read_csv(targ_path) %&gt;% 
+  select(Run, source_name, sample_name=`Sample Name`) %&gt;%
+  distinct(source_name, sample_name) %&gt;% 
+  mutate(
+    group = source_name %&gt;% str_replace(&quot;MCF-7 &quot;,&quot;MCF_7_&quot;),    
+    batch = rep(1:3,2) ) %&gt;% 
+  mutate_all(as_factor) %&gt;% 
+  select(-source_name)
+
+# make the table from scratch-----
+## table for GSE68246
+targets_file &lt;- tibble( 
   file_name = files_salm,
   sample_name = names(files_salm),
   group = as_factor(c(rep(&quot;MCF_7_Monolayer&quot;,3),rep(&quot;MCF_7_Spheroid&quot;,3))),
-  batch = as_factor(c(1:3,1:3))
-)</code></pre>
+  batch = as_factor(rep(1:3,2))
+)
+## table for TCGA_BRCA
+targets_file &lt;- tibble(
+  file_name = files_salm,
+  sample_name = names(files_salm),
+  group = names(files_salm) %&gt;% 
+    str_remove(&quot;.{13}&quot;) %&gt;% 
+    str_remove(&quot;[:alpha:]?-.+&quot;),
+  batch = names(files_salm) %&gt;% 
+    str_remove(&quot;.{8}&quot;) %&gt;% 
+    str_remove(&quot;-.+&quot;) %&gt;% 
+    as_factor() ) %&gt;%
+  mutate(group = as_factor(case_when(
+    group == &quot;01&quot; ~ &quot;Primary_Solid_Tumor&quot;,
+     group == &quot;11&quot; ~ &quot;Solid_Tissue_Normal&quot;
+  ))) </code></pre>
 </div>
 <div id="make-a-dgelist-object-for-salmon" class="section level2">
 <h2>5. Make a DGElist object for salmon</h2>
@@ -510,7 +538,7 @@ dgl_salmon &lt;- DGEList(cts, samples = targets_file) %&gt;%
 rm(cts, normCts, normMat, txi)</code></pre>
 </div>
 <div id="import-the-featurecounts-object-and-make-a-dgelist-object" class="section level2">
-<h2>6. Import the FeatureCounts object and make a DGElist object</h2>
+<h2>6. Import the featureCounts object and make a DGElist object</h2>
 <pre class="r"><code># load the rds from featureCOunts----
 #INPUT rds featureCOunts
 fc &lt;- list.files(path = my_basename, recursive = TRUE, 
@@ -676,7 +704,7 @@ function_norm &lt;- function(dgl_fil_data, data_path){
   norm_method &lt;- list(&quot;none&quot;, &quot;TMM&quot;, &quot;TMMwsp&quot;, &quot;RLE&quot;) %&gt;% 
     set_names(.)
   edger_norm &lt;- map(norm_method, ~calcNormFactors(dgl_fil_data, method = .x))
-  # voom  ----
+  # limma-voom  ----
   pdf(str_glue(&quot;{data_path}/voom_plots_{str_remove(data_path,&#39;.+/&#39;)}.pdf&quot;))
   voom_norm &lt;-  edger_norm[1:3] %&gt;% 
     map2(.y = c(&quot;quantile&quot;, rep(&quot;none&quot;,2)),
@@ -684,7 +712,7 @@ function_norm &lt;- function(dgl_fil_data, data_path){
         plot = TRUE, normalize.method = .y)) %&gt;% 
     set_names(&quot;voom_Quantile&quot;,&quot;voom_TMM&quot;,&quot;voom_TMMwsp&quot;)
   dev.off()
-  # voom with quality weights ----
+  # limma-voom with quality weights ----
   pdf(str_glue(&quot;{data_path}/voom_quality_weights_plots_{str_remove(data_path,&#39;.+/&#39;)}.pdf&quot;))
   voom_norm_QW &lt;- edger_norm[1:3] %&gt;% 
     map2(.y = c(&quot;quantile&quot;, rep(&quot;none&quot;,2)),
@@ -713,7 +741,7 @@ function_norm &lt;- function(dgl_fil_data, data_path){
 
 norm_dgls &lt;- filtered_dgls %&gt;%
   map2(.y = dat_path, ~function_norm(.x, .y))
-# save the list with all normalized values (edgeR and limma)-----
+# save the list with all normalized values (edgeR and limma-voom)-----
 norm_dgls %&gt;%
   map2( .y = dat_path, 
     ~write_rds(.x,file = str_glue(&quot;{.y}/list_norm_dgls_{str_remove(.y,&#39;.+/&#39;)}.rds&quot;)))</code></pre>
@@ -817,7 +845,7 @@ function_PCA &lt;- function(dgl_norm_data, plot_path, norm_method = &quot;TMM&qu
   d &lt;- data.frame(PC1=pca$x[,1], PC2=pca$x[,2], group=group,
                   name=colnames(dgl_norm_data[[norm_method]]$counts))
   
-  # create batch if exist 
+  # create batch if it exists
   if(dgl_norm_data[[norm_method]]$samples$batch){
     d$batch &lt;- dgl_norm_data[[norm_method]]$samples$batch %&gt;% as_factor
     p &lt;-  ggplot(data=d, 
@@ -1006,7 +1034,7 @@ groups %&gt;% map2(list(salmon_groups),
   str_sub(1,15) %&gt;% 
   ggseqlogo(method = &#39;prob&#39;, font=&quot;roboto_regular&quot;) +
   ggtitle(str_glue(&quot;Salmon_{.x}&quot;)))  
-#featurecounts
+#featureCounts
 groups %&gt;% map2(list(FC_groups),
   ~.y %&gt;% 
     filter(gene_type == &quot;piRNA&quot;) %&gt;%
@@ -1021,6 +1049,7 @@ dev.off()</code></pre>
 <h2>18. Reads info and histograms</h2>
 <div id="i.-extract-the-information-of-length-for-reads" class="section level3">
 <h3>i. extract the information of length for reads</h3>
+<p>Here we need to collapse the the information that it can be extracted from the bam files of aligned reads, we use the docker of sncrna_workflow to perform it.</p>
 <pre class="bash"><code>## filter for reads of 15-49 bases
 for file in my_data/star_results/*/*_sorted.bam; 
 do
@@ -1032,7 +1061,7 @@ samtools view -h -@ 6 ${file} | awk &#39;length($10) &gt; 14 &amp;&amp; length($
 echo &quot;end:$(date)&quot;; 
 done
 
-## find length of reads from STAR - FeatureCounts
+## find length of reads from STAR - featureCounts
 #cut -f1 my_data/piRNAs_hist.txt &gt; my_data/piRNA_ids.txt | grep -F -w -f my_data/piRNA_ids.txt  -
 
 for file in my_data/spike_ins/star_results/*.featureCounts.bam; 
@@ -1056,12 +1085,13 @@ samtools view  -@ 2 ${file} | awk &#39;BEGIN{FS=OFS=&quot;\t&quot;}{print $1,len
 echo &quot;end:$(date)&quot;; 
 done
 
-## if was to make only for piRNA
+## if it was to make only for piRNA
 samtools view -@ 6 ${file} | awk &#39;BEGIN{FS=OFS=&quot;\t&quot;}{print length($10),$3}&#39;| grep -F -w -f my_data/piRNA_ids.txt  - | sort -k2,2 | uniq -c | sed -e &#39;s/^ *//g&#39;| sed &#39;s/ /\t/g&#39; &gt; ${where_to_save}/${samp}_hist_pirna.txt;
 </code></pre>
 </div>
 <div id="ii.-make-a-txt-file-with-the-info" class="section level3">
 <h3>ii. make a txt file with the info</h3>
+<p>here we return to the Rstudio docker in order to perform the visualization</p>
 <pre class="r"><code>library(tidyverse)
 hist_all_RNA &lt;- list.files(path = &quot;../genome_transc_human/quants&quot;, 
                            pattern = &quot;hist_allRNA.txt&quot;, 
@@ -1079,7 +1109,7 @@ library(plyranges)
   select(gene_id,gene_type) %&gt;% 
   distinct(gene_id, .keep_all = T) %&gt;% 
     mutate(gene_type = as_factor(gene_type))
-# FC and salmon files -------
+# featureCounts(FC) and salmon files -------
 hist_files_fc &lt;- list.files(path =&quot;mouse_datasets/star_results&quot;,
                          pattern = &quot;_hist.txt&quot;, 
                          recursive = TRUE, full.names = TRUE) %&gt;% 
@@ -1134,7 +1164,7 @@ reads_info_fc &lt;- function(df, Categ_regex_list){
 }
 
 
-## read the hist files and mutate them 
+## read the hist files and add information about multi-mapped reads them 
 df_list &lt;- hist_files_fc %&gt;% 
   map(~read_tsv(.x, col_names = c(&quot;Reads&quot;, &quot;Length&quot;, &quot;sncRNA&quot;)) %&gt;% 
   mutate(Length = as_factor(Length),
@@ -1164,7 +1194,7 @@ dgl_norm$featureCounts$TMM$counts %&gt;%
   left_join(FC_reads_info) %&gt;% # save them on a txt
 write_tsv(&quot;mouse_datasets/FC_reads_info.txt&quot;)
 
-# FeatureCounts histograms of piRNAs------
+# featureCounts histograms of piRNAs------
 piRNA_DF_hist&lt;- df_list %&gt;% 
   bind_rows(.id = &quot;Sample&quot;) %&gt;% 
   filter(sncRNA != &quot;Not_assigned&quot;) %&gt;% 
@@ -1343,6 +1373,9 @@ get_gene_type &lt;- function(x){key_mIrna_pIrna %&gt;%
 
 test_mut_reads %&gt;% head %&gt;% 
   mutate_at(vars(starts_with(&quot;V&quot;)), ~map_chr(.,get_gene_type)) </code></pre>
+<p>Finally we exit the docker container</p>
+<pre class="bash"><code># exit docker container
+exit</code></pre>
 </div>
 </div>
 

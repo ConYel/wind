@@ -1,7 +1,12 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
 # wind: wORKFLOW FOR PiRNAs AnD BEYONd
 We have developed a bioinformatics workflow that could reliably 
 characterise sequences from small-RNA sequencing to different databases 
-of small non-coding RNA, and more precisely tackle the crucial issue regarding the piRNA annotation.
+of small non-coding RNAs, and more precisely tackle the crucial issue regarding the piRNA annotation.
 
 The workflow consists of three significant steps:  
 1. Annotation forging: the generation of the annotation files for small RNA sequences used in the next quantification step.  
