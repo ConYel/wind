@@ -171,6 +171,7 @@ Next we will follow the instructions in STEP_3_Exploratory_Data_Analysis.Rmd
 ## R Session Info
 ```{r session Info}
 sessionInfo()
+```
 R Under development (unstable) (2019-12-06 r77536)
 Platform: x86_64-pc-linux-gnu (64-bit)
 Running under: Debian GNU/Linux 10 (buster)
@@ -207,7 +208,7 @@ loaded via a namespace (and not attached):
 [37] magrittr_1.5     backports_1.1.5  scales_1.1.0     rvest_0.3.5     
 [41] assertthat_0.2.1 colorspace_1.4-1 stringi_1.4.6    lazyeval_0.2.2  
 [45] munsell_0.5.0    broom_0.5.5      crayon_1.3.4  
-```
+
 ## We have worked on : 
 ```{bash versions, eval = FALSE}
 [root@localhost GSE124507_brain_project]# cat /etc/*-release

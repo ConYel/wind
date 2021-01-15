@@ -1015,6 +1015,14 @@ test_mut_reads %>% head %>%
   mutate_at(vars(starts_with("V")), ~map_chr(.,get_gene_type)) 
 
 ```
+## 19. Ping-pong signal plot
+```{r}
+annot_tbl <- read_gff2("../genome_transc_human/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
+  filter(gene_type == "piRNA")
+# load the expressed piRNA
+top_100_pirna <- read_tsv("Breast_Cancer_Ductal_lobular_BRCA-US/ExpDatAnalysis_BRCA_cancer_sa_hg38_12_Nov_2020/salmon_FC_cpm_union_top100.txt")
+
+```
 
 Finally we exit the docker container
 ```{bash exit docker}
