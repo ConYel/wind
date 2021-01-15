@@ -389,23 +389,24 @@ summary {
 <h1 class="title toc-ignore">wind: wORKFLOW FOR PiRNAs AnD BEYONd</h1>
 <h3 class="subtitle">Computational workflow for the preprocessing of selected samples from TCGA regarding Breast Cancer</h3>
 <h4 class="author">Constantinos Yeles (Konstantinos Geles)</h4>
-<h4 class="date">Fri Nov 13 2020</h4>
+<h4 class="date">Wed Nov 18 2020</h4>
 
 </div>
 
 <div id="TOC">
 <ul>
-<li><a href="#the-data-set">The Data set</a><ul>
+<li><a href="#the-data-set">The Data set</a></li>
+<li><a href="#data-aqcuisition-and-preprocessing">Data aqcuisition and preprocessing</a><ul>
 <li><a href="#i.-downloading-the-samples">i. Downloading the samples</a></li>
 <li><a href="#ii.-bam-to-fastq">ii. BAM to FASTQ</a></li>
 <li><a href="#iii.-preprocessing-of-the-samples">iii. Preprocessing of the samples</a></li>
 </ul></li>
 <li><a href="#alignment-and-quantification">Alignment and Quantification</a><ul>
 <li><a href="#i.-transcript-abundances-with-salmon">i. Transcript abundances with <strong><span>Salmon</span></strong></a></li>
-<li><a href="#alignment-and-quantification-of-sequenced-reads-with-star-and-featurecounts">Alignment and quantification of sequenced reads with STAR and Featurecounts</a></li>
+<li><a href="#alignment-and-quantification-of-sequenced-reads-with-star-and-featurecounts">Alignment and quantification of sequenced reads with STAR and featureCounts</a></li>
 <li><a href="#ii.-alignment-with-star">ii. Alignment with STAR</a></li>
 <li><a href="#r-docker">R docker</a></li>
-<li><a href="#iv.-featurecounts">iv. <strong><span>FeatureCounts</span></strong></a></li>
+<li><a href="#iv.-featurecounts">iv. <strong><span>featureCounts</span></strong></a></li>
 </ul></li>
 <li><a href="#r-session-info">R Session Info</a></li>
 <li><a href="#we-have-worked-on">We have worked on :</a></li>
@@ -414,15 +415,17 @@ summary {
 
 <div id="the-data-set" class="section level2">
 <h2>The Data set</h2>
-<p>We will work with a dataset from TCGA which is a subset of 18 samples from <a href="https://doi.org/10.1038/ng.2764">TCGA-BRCA</a>. In detail, we used 9 Primary Solid Tumors versus 9 Solid Tissue Normal matched samples.<br />
-## Data aqcuisition and preprocessing</p>
+<p>We will work with a dataset from TCGA which is a subset of 18 samples from <a href="https://doi.org/10.1038/ng.2764">TCGA-BRCA</a>. In detail, we used 9 Primary Solid Tumors versus 9 Solid Tissue Normal matched samples.</p>
+</div>
+<div id="data-aqcuisition-and-preprocessing" class="section level2">
+<h2>Data aqcuisition and preprocessing</h2>
 <div id="i.-downloading-the-samples" class="section level3">
 <h3>i. Downloading the samples</h3>
 <p>To obtain the data from TCGA we used a manifest with the selected samples and followed the instructions on <a href="https://docs.gdc.cancer.gov/Data_Transfer_Tool/Users_Guide/Preparing_for_Data_Download_and_Upload/">GDC website</a></p>
 </div>
 <div id="ii.-bam-to-fastq" class="section level3">
 <h3>ii. BAM to FASTQ</h3>
-<p>The acquired files were in BAM format but in order to perform the whole workflow we transformed them to fastq format.</p>
+<p>The acquired files were in BAM format but in order to perform the whole workflow we transformed them to FASTQ format.</p>
 <pre class="bash"><code>docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 
 mkdir my_data/fastq_files
@@ -486,8 +489,8 @@ done
 exit</code></pre>
 </div>
 <div id="alignment-and-quantification-of-sequenced-reads-with-star-and-featurecounts" class="section level3">
-<h3>Alignment and quantification of sequenced reads with STAR and Featurecounts</h3>
-<p>We use the <strong><a href="https://github.com/alexdobin/STAR">STAR</a></strong> aligner and then perform quantification with featureCounts from <strong><a href="https://www.bioconductor.org/packages/release/bioc/html/Rsubread.html">Rsubread</a></strong> package. With the docker image that contains STAR and <strong><a href="https://www.htslib.org/">Samtools</a></strong> we get sorted BAM files and use them for quantification / annotation for smallRNAs.</p>
+<h3>Alignment and quantification of sequenced reads with STAR and featureCounts</h3>
+<p>We use the <strong><a href="https://github.com/alexdobin/STAR">STAR</a></strong> aligner and then perform quantification with featureCounts from <strong><a href="https://www.bioconductor.org/packages/release/bioc/html/Rsubread.html">Rsubread</a></strong> package. With the docker image that contains STAR and <strong><a href="https://www.htslib.org/">Samtools</a></strong> we get sorted BAM files and use them for quantification/annotation for smallRNAs.</p>
 </div>
 <div id="ii.-alignment-with-star" class="section level3">
 <h3>ii. Alignment with STAR</h3>
@@ -508,15 +511,15 @@ STAR --genomeDir my_data/genome_transc_human/human_data/GRCh38_2_7_4a --genomeLo
 done
 
 exit</code></pre>
-<p>Next, we run a docker image which includes varius R packages that will be used futhermore in the downstream analysis following featurecounts for the exploratory data analysis of piRNA data</p>
+<p>Next, we run a docker image which includes varius R packages that will be used furthermore in the downstream analysis following featureCounts for the exploratory data analysis of piRNA data</p>
 </div>
 <div id="r-docker" class="section level3">
 <h3>R docker</h3>
 <pre class="bash"><code>docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages</code></pre>
-<p>From here on we work in R using a browser. we input <a href="http://localhost:8787/" class="uri">http://localhost:8787/</a> on browser, 0 for username and 12345 for password.</p>
+<p>From here on we work on R using a browser, we input <a href="http://localhost:8787/" class="uri">http://localhost:8787/</a> on browser, 0 for username and 12345 for password.</p>
 </div>
 <div id="iv.-featurecounts" class="section level3">
-<h3>iv. <strong><a href="http://subread.sourceforge.net/">FeatureCounts</a></strong></h3>
+<h3>iv. <strong><a href="http://subread.sourceforge.net/">featureCounts</a></strong></h3>
 <pre class="r"><code>library(Rsubread)
 library(tidyverse)
 list.BAM &lt;- list.files(path = &quot;Breast_Cancer_TCGA/star_results&quot;, 

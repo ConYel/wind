@@ -4,13 +4,13 @@ subtitle: "Computational workflow for the preprocessing of selected samples from
 author: "Constantinos Yeles (Konstantinos Geles)"
 date: "`r format(Sys.time(), '%a %b %d %Y')`"
 output:
+  pdf_document:
+    toc: yes
+    toc_depth: 3
   html_document:
     toc: yes
     toc_depth: 3
     theme: paper 
-  pdf_document:
-    toc: yes
-    toc_depth: 3
 editor_options:
   chunk_output_type: console
 ---
@@ -21,6 +21,7 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ## The Data set
 
 We will work with a dataset from TCGA which is a subset of 18 samples from [TCGA-BRCA](https://doi.org/10.1038/ng.2764). In detail, we used 9 Primary Solid Tumors versus 9 Solid Tissue Normal matched samples.  
+
 ## Data aqcuisition and preprocessing  
 
 ### i. Downloading the samples  
@@ -29,7 +30,7 @@ To obtain the data from TCGA we used a manifest with the selected samples and fo
 
 ### ii. BAM to FASTQ
 
-The acquired files were in BAM format but in order to perform the whole workflow we transformed them to fastq format.
+The acquired files were in BAM format but in order to perform the whole workflow we transformed them to FASTQ format.
 
 ```{bash bam2fq}
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
@@ -96,11 +97,11 @@ echo samtools view -O bam -o ${regex}.bam -@ 6 ${file};
 done
 exit
 ```
-### Alignment and quantification of sequenced reads with STAR and Featurecounts
+### Alignment and quantification of sequenced reads with STAR and featureCounts
 We use the __[STAR](https://github.com/alexdobin/STAR)__ aligner and then
 perform quantification with featureCounts from __[Rsubread](https://www.bioconductor.org/packages/release/bioc/html/Rsubread.html)__ package.
 With the docker image that contains STAR and __[Samtools](https://www.htslib.org/)__
-we get sorted BAM files and use them for quantification / annotation for smallRNAs.
+we get sorted BAM files and use them for quantification/annotation for smallRNAs.
 
 ### ii. Alignment with STAR
 ```{bash STAR}
@@ -124,7 +125,7 @@ exit
 ```
 
 Next, we run a docker image which includes varius R packages that
-will be used futhermore in the downstream analysis following featurecounts
+will be used furthermore in the downstream analysis following featureCounts
 for the exploratory data analysis of piRNA data
 
 ### R docker
@@ -132,11 +133,11 @@ for the exploratory data analysis of piRNA data
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
 ```
 
-From here on we work in R using a browser. 
+From here on we work on R using a browser, 
 we input http://localhost:8787/ on browser, 0 for username and 12345 for password.
 
-### iv. __[FeatureCounts](http://subread.sourceforge.net/)__
-```{r FeatureCounts}
+### iv. __[featureCounts](http://subread.sourceforge.net/)__
+```{r featureCounts}
 library(Rsubread)
 library(tidyverse)
 list.BAM <- list.files(path = "Breast_Cancer_TCGA/star_results", 
