@@ -1,0 +1,111 @@
+---
+title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
+subtitle: "Computational workflow for Data Exploration resulted from smallRNA-seq of testis samples"
+author: "Constantinos Yeles (Konstantinos Geles)"
+date: "`r format(Sys.time(), '%a %b %d %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    theme: paper 
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+Following the step 2 we are working again on the docker of Rstudio loaded before.
+## 1. Load libraries
+
+```{r load libraries}
+suppressPackageStartupMessages({
+  library('tidyverse') 
+  library('data.table')
+  library('plyranges')
+  library('tximport')
+  library('edgeR')
+  library('NOISeq')
+  library('rafalib')
+  library('pheatmap')
+  library('RColorBrewer')
+})
+```
+## 2. Directory generation for the resulted files
+### i. Add date
+
+Used as an identifier for the folder 
+
+```{r todate_of_analysis}
+todate <- format(Sys.time(), "%d_%b_%Y")
+```
+### ii. Make the directory for the results of the exploratory data analysis
+
+```{r make dirs}
+my_basename <- "../testis_colo_pub_workflow" ## INPUT name of the folder
+my_exp <- "Making_of_ping_pong_plot" ## INPUT name of the analysis
+genome_input <- "hg38" ## INPUT genome version here
+#my_exp_sal <- "salmon"
+#my_exp_fc <- "featureCounts"
+dat_path <- str_glue("{my_basename}/{my_exp}_{genome_input}_{todate}")
+dir.create(dat_path, recursive = TRUE)
+```
+## 3. Import the expr values
+### i. 
+```{r}
+# Find all rows where ANY numeric variable is greater than zero
+rowAny <- function(x) rowSums(x) > 1
+
+# load the gtf 
+annot_tbl <- read_gff2("../genome_transc_human/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
+  filter(gene_type == "piRNA")
+# load the expr per group
+piRNA_grouped_exprs <- list.files(path = my_basename,
+                                          pattern = "salmon_FC_cpm_union_grouped.txt", 
+                                          full.names = TRUE, 
+                                          recursive = TRUE) %>% 
+  read_tsv() %>% 
+  filter(sncRNA %in% annot_tbl$gene_id,
+         rowAny(across(where(is.numeric), ~ .x >= 1))) 
+  
+Testis_10_top_piRNA <- piRNA_grouped_exprs %>% 
+  arrange(desc(Testis_pool_fc)) %>% 
+  select(sncRNA, Testis_pool_fc, COLO205_fc) %>% 
+  head(10) %>% .$sncRNA
+
+COLO205_10_top_piRNA <- piRNA_grouped_exprs %>% 
+  arrange(desc(COLO205_fc)) %>% 
+  select(sncRNA, Testis_pool_fc, COLO205_fc) %>% 
+  head(10) %>% .$sncRNA
+
+```
+
+### ii. check the Genomic Ranges from most expressed piRNAs
+```{r}
+annot_tbl %>% filter(gene_id == Testis_10_top_piRNA[1])
+annot_tbl %>% filter(gene_id == COLO205_10_top_piRNA[1])
+wh <- annot_tbl %>% filter(gene_id == COLO205_10_top_piRNA[1])
+```
+### iii. make a ggbio plot 
+```{r}
+library("BSgenome.Hsapiens.UCSC.hg38")
+library(ggbio)
+
+bg <- BSgenome.Hsapiens.UCSC.hg38
+# import the bam of testis sample
+testis_pool_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_align/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam" %>%
+  read_bam %>% 
+  select(strand,seq) %>%
+  filter_by_overlaps(wh)
+
+Rsamtools::indexBam(testis_pool_bam)
+# the plot
+p.mis <- autoplot(testis_pool_bam, 
+                  bsgenome = bg, 
+                  which = wh, 
+                  stat = "mismatch")
+```
+
