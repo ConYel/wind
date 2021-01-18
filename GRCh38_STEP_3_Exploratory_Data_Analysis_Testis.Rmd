@@ -70,13 +70,20 @@ piRNA_grouped_exprs <- list.files(path = my_basename,
   read_tsv() %>% 
   filter(sncRNA %in% annot_tbl$gene_id,
          rowAny(across(where(is.numeric), ~ .x >= 1))) 
-  
+
+# pick only piRNAs with T->1st base and A ->10nth
+piRNAs_possible_ping_pong <- annot_tbl %>% 
+  select(gene_id, seq_RNA) %>% 
+  filter(str_detect(seq_RNA, "^T[TCGA]{8}A.+"))
+
 Testis_10_top_piRNA <- piRNA_grouped_exprs %>% 
+  filter(sncRNA %in% piRNAs_possible_ping_pong$gene_id) %>% 
   arrange(desc(Testis_pool_fc)) %>% 
   select(sncRNA, Testis_pool_fc, COLO205_fc) %>% 
   head(10) %>% .$sncRNA
 
-COLO205_10_top_piRNA <- piRNA_grouped_exprs %>% 
+COLO205_10_top_piRNA <- piRNA_grouped_exprs %>%
+  filter(sncRNA %in% piRNAs_possible_ping_pong$gene_id) %>%
   arrange(desc(COLO205_fc)) %>% 
   select(sncRNA, Testis_pool_fc, COLO205_fc) %>% 
   head(10) %>% .$sncRNA
@@ -85,9 +92,18 @@ COLO205_10_top_piRNA <- piRNA_grouped_exprs %>%
 
 ### ii. check the Genomic Ranges from most expressed piRNAs
 ```{r}
-annot_tbl %>% filter(gene_id == Testis_10_top_piRNA[1])
-annot_tbl %>% filter(gene_id == COLO205_10_top_piRNA[1])
-wh <- annot_tbl %>% filter(gene_id == COLO205_10_top_piRNA[1])
+annot_tbl %>% filter(gene_id == Testis_10_top_piRNA[2])
+annot_tbl %>% filter(gene_id == COLO205_10_top_piRNA[2])
+
+
+wh <- annot_tbl %>% 
+  filter(gene_id == COLO205_10_top_piRNA[2]) %>% 
+  as_tibble() %>% 
+  mutate(strand = "*") %>% 
+  as_granges()
+
+
+
 ```
 ### iii. make a ggbio plot 
 ```{r}
@@ -96,12 +112,29 @@ library(ggbio)
 
 bg <- BSgenome.Hsapiens.UCSC.hg38
 # import the bam of testis sample
+testis_pool_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_align/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam"
+Rsamtools::indexBam(testis_pool_bam)
+
 testis_pool_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_align/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam" %>%
   read_bam %>% 
-  select(strand,seq) %>%
-  filter_by_overlaps(wh)
+  select(seq) %>%
+  filter_by_overlaps(wh,!is_unmapped_query)
 
-Rsamtools::indexBam(testis_pool_bam)
+testis_pool_FC_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam.featureCounts.bam" 
+
+Rsamtools::sortBam(testis_pool_FC_bam, 
+        destination ="../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam.featureCounts.sorted.bam")
+
+testis_pool_FC_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam.featureCounts.sorted.bam.bam"
+Rsamtools::indexBam(testis_pool_FC_bam)
+
+testis_pool_FC_bam_read <-testis_pool_FC_bam %>%
+  read_bam %>% 
+  select(XS,XT,seq) %>%
+  filter_by_overlaps(wh, minoverlap = 10L)
+
+ wh %>% select(seq_RNA,gene_id) %>% as_tibble
+aligned_smallRNAs<-testis_pool_FC_bam_read %>% select(XT, cigar) %>% as_tibble %>% count(XT) # %>% arrange(desc(width),seq)
 # the plot
 p.mis <- autoplot(testis_pool_bam, 
                   bsgenome = bg, 
