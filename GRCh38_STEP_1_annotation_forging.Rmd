@@ -572,12 +572,39 @@ misc_piRNAs_GR_filt <- c_piBNK_RCent_GR_filtered %>%
   filter(gene_type == "piRNA") %>% # GR = 133.553
   find_overlaps_directed(gene_annot_misc_piRNA, maxgap = -1L, 
                          minoverlap = 1L, suffix = c("_piRNAs", "_genes")) %>% 
-  select(starts_with(c("gene_","typ"))) %>%
+  #select(starts_with(c("gene_","typ"))) %>%
   as_tibble() %>% 
   unite(col = "seq_piBNK", seqnames:strand, sep = "_") %>% 
-  distinct(seq_piBNK, .keep_all = TRUE) # GR = 12.889 to be recategorized
+  distinct(seq_piBNK, .keep_all = TRUE) %>% # GR = 12.889 to be recategorized
+  select(seq_piBNK, seq_id, gene_name, gene_id, transcript_id, tag) %>% 
+  unite(col = "newseq_id",c(seq_id,gene_name), sep = "_Gname_") %>% 
+  unite(col = "GENCODE_annot", gene_id:tag, sep = "_GNC_")
+
+# misc_piRNAs
+complete_piBnk_RCent <- c_piBNK_RCent_GR_filtered %>% 
+  as_tibble() %>% 
+  unite(col = "seq_piBNK", seqnames:strand, sep = "_") %>% 
+  left_join(misc_piRNAs_GR_filt) %>% 
+  mutate(gene_id = 
+           case_when(
+             is.na(newseq_id) ~ seq_id,
+             TRUE ~ newseq_id),
+         gene_type =
+           case_when(
+             is.na(newseq_id) ~ gene_type,
+             TRUE ~ "misc_piRNA")
+           ) %>% 
+  select(seq_piBNK, gene_id, everything())
 
 
+
+
+complete_piBnk_RCent %>% 
+  distinct(gene_id,.keep_all = T) %>% 
+  filter(gene_type %in% c("piRNA","misc_piRNA")) %>% 
+  arrange(seq_id) %>% 
+  select(seq_piBNK:seq_id,newseq_id) %>% filter(seq_id =="hsa_piR_008764_DQ581894")
+  count(seq_id,sort = T)
 ```
 
 ```{r  }
