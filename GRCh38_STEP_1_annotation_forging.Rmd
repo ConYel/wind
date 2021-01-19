@@ -21,16 +21,22 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 
 # Introduction
 With the intent to annotate and quantify small RNA sequence data (and in 
-particular piRNA) derived from Next-Generation Sequencing, we have developed wind. For the generation of annotation files and results, widely used tools of alignment, annotation, quantification and differential expression algorithms have been used. Although the workflow is focused particularly on piRNAs (as it is our main subject of research) with slight modifications can be applied to all small RNA categories of interest.
+particular piRNA) derived from Next-Generation Sequencing, we have developed wind. 
+For the generation of annotation files and results, widely used tools of alignment, annotation, quantification and differential expression algorithms have been used. 
+Although the workflow is focused particularly on piRNAs 
+(as it is our main subject of research) with slight modifications can be applied
+to all small RNA categories of interest.
 
 To make it more versatile and reproducible, we adopted the _[containerization approach](https://www.docker.com/resources/what-container)_ as the software 
 deployment is fast, efficient, and potentially bug-free. It can be used in 
 various operating systems with only requirements the installation of the docker
-engine and have some minimum requirements of processing power and RAM to 
+engine and some minimum requirements of processing power and RAM to 
 run the most memory demanding tools.
 
 # Materials and Methods
-The workflow has been primarily carried out on a Linux server, but it can be used easily on a Windows or Mac OS machine as long as changes have been done to appropriate functions/operations.
+The workflow has been primarily carried out on a Linux server, 
+but it can be used easily on a Windows or Mac OS machine 
+as long as changes would be done for particular functions/operations.
 
 The workflow utilizes _[Bash](https://www.gnu.org/software/bash/)_ and 
 _[R](https://www.r-project.org/)_ scripting for various operations.
@@ -63,8 +69,9 @@ Databases that have been used:
 ## 1. Acquisition and Preprocessing of the small non-coding RNA (ncRNA) sequences
 ### i. Downloading the files for the generation of a Gene transfer format(gtf) 
 
-Human piRNA sequences were downloaded from piRNABank to enrich in piRNA sequences the 
-gtf file, and smallRNA genome coordinates(bed files) from RNAcentral have been acquired
+To begin with, Human piRNA sequences were downloaded from piRNABank to enrich 
+in piRNA sequences the gtf file, and small RNA genome coordinates(bed files) 
+from RNAcentral have been acquired.
 ```{bash download the Databases}
 # all the files and folders for the workflow are created in the working directory 
 # plus the results of the analysis
@@ -85,34 +92,36 @@ genome_coordinates/bed/homo_sapiens.GRCh38.bed.gz -O my_data/human_data/homo_sap
 wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_34/GRCh38.primary_assembly.genome.fa.gz -O my_data/human_data/hg38/GRCh38.primary_assembly.genome.fa.gz
 
 pigz -d my_data/human_data/hg38/GRCh38.primary_assembly.genome.fa.gz 
+
+# GRCh38 annotation in order to exclude sequences of piRNA
+# that are inside other sequences
+wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_36/gencode.v36.primary_assembly.annotation.gtf.gz -O my_data/human_data/hg38/gencode.v36.primary_assembly.annotation.gtf.gz
 ```
 ### ii. Preprocessing of the piRNAbank file
 
-The fasta file from piRNAbank has U character instead of T in the sequences, so changes have been made using [sed](https://www.gnu.org/software/sed/)
+The fasta file from piRNAbank has U character instead of T in the sequences, 
+so changes have been made using [sed](https://www.gnu.org/software/sed/)
 ```{bash sed fasta}
 sed 's/U/T/g' my_data/human_data/human_pir.txt > my_data/human_data/pirnaBank_human.fasta
-
 # exit docker container
 exit
 ```
-### iii. Run docker and Load libraries
-with the command below we run the docker container for Rstudio 
+### iii. Removing of the duplicated sequences from the piRNAbank file
+
+We deploy the docker container with Rstudio server
 ```{bash Run docker bioc I}
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
-
-# we prefer to work on Rstudio to perform everything on R otherwise R on 
-# bash could be used directly
 ```
+We prefer to work on Rstudio to perform everything on R otherwise R on 
+bash could be used directly. We load the libraries that would assist us
+in creation of the fasta file.
 ```{r load the libraries I}
 suppressPackageStartupMessages({
-  library('tidyverse') 
-  library('data.table')
+  library('stringr')
   library('plyranges')
-  library("BSgenome.Hsapiens.UCSC.hg38")
 })
 ```
-### iv. Remove duplicated sequences
 
 In the piRNABank fasta duplicated sequences exist and need to be removed
 ```{r remove duplicates}
@@ -138,9 +147,10 @@ exit the docker container
 # exit docker container
 exit
 ```
-### v. Align piRNA sequences to human genome
+### iv. Align piRNA sequences to human genome
 
-Afterwards, alignment of piRNA sequences to the human genome utilizing STAR aligner has been performed.
+Afterwards, alignment of piRNA sequences to the human genome 
+utilizing STAR aligner has been performed.
 Then, samtools has been used to export the sequences in fasta format
 ```{bash STAR_SAM}
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
@@ -170,7 +180,7 @@ bedtools bamtobed < my_data/piRNABank_human_hg38/piBnk38_sorted.bam > my_data/pi
 
 exit
 ```
-## 2. Unification of pirnaBANK sequences and RNAcentral ncRNA sequences 
+## 2. Join of piRNABank sequences and RNAcentral ncRNA sequences 
 ### Run docker
 
 ```{bash Run docker bioc II}
@@ -196,7 +206,7 @@ sRNA <- read_bed("human_data/homo_sapiens.GRCh38.bed.gz") %>%
 
 sInfo <- Seqinfo(genome="hg38")
 seqlevels(sInfo) <- seqlevels(sRNA)
-seqinfo(sRNA)<- sInfo
+seqinfo(sRNA) <- sInfo
 ```
 ### iii. RNAcentral. filtering for sequences smaller than 100 nucleotides
 
@@ -237,7 +247,7 @@ fasta_tr_hs <- fasta_tr_hs[sort(fasta_tr_hs@ranges@NAMES)]
 
 fasta_tr_hs_tbl <- fasta_tr_hs %>% 
   as.character() %>% 
-  enframe(name = "tr_hg38" ,value = "hg38") %>% 
+  enframe(name = "tr_hg38", value = "hg38") %>% 
   left_join(biotypes, by = c("tr_hg38" = "sRNA_id"))
 
 fasta_tr_hs_tbl %>% 
@@ -252,7 +262,7 @@ transcripts_GR <- transcripts_human %>%
     as_tibble() %>% 
     unite(col = "seq_RCent", seqnames:strand, sep = "_") 
 
-# find unique pairs of seq and GR
+# find unique pairs of sequences and GR
 uniq_seq <- transcripts_GR  %>% 
   distinct(dna, .keep_all = TRUE) %>% 
   arrange(dna) %>% 
@@ -263,7 +273,7 @@ transcripts_GR <- transcripts_GR %>%  # [153.043] GRs / [41,496] sRNA_id -> [43,
   left_join(uniq_seq)
 
 ```
-### v. piRNABank. import the piRNA sequences aligned to genome fasta
+### v. piRNABank. import the piRNA sequences aligned to genome 
 
 ```{r import piRNABank}
 piRNAbank_hg38 <- Biostrings::readDNAStringSet("piRNABank_human_hg38/piBnk38_sorted.fasta")
@@ -293,10 +303,14 @@ transcripts_pi_hg38 <- Views(BSgenome.Hsapiens.UCSC.hg38, piRNAbank_hg38_ranges)
 
 # we need to apply a second width filter at 69 
 # as we know that piRNAs are ~32 base pairs
+# but if we search the length of GRs there are some with
+# width => 69, 8 in particular
 transcripts_pi_hg38 <- transcripts_pi_hg38 %>% filter(width < 69)  # [45,818] -> [45,810] GRs / 23,120 seq
 transcripts_pi_hg38 %>% count(name) %>% nrow #> 23120 piRNAs from piRNABANK
 
 # checking sequences of alignments with lower length
+# here we explore the GRs that have one less at least base than the 
+# piRNA sequence we actually have from the principal piRNABank fasta
 sequen_pi_false <- transcripts_pi_hg38 %>% 
   as_tibble() %>% 
   left_join(piRNAbank_hg38_tib) %>% 
@@ -309,8 +323,8 @@ sequen_pi_false <- transcripts_pi_hg38 %>%
 piRNAbank_hg38_ranges %>% 
   as_tibble() %>%
   unite(col = "seq_s", seqnames:strand, sep = "_") %>% 
-  count(seq_s) %>% 
-  filter(n > 1) %>% 
+  count(seq_s, sort = TRUE) %>% 
+  filter(n > 1) %>% # 38 sequences have the same genomic range with at least one other 
   .$seq_s %>% 
   map(~sequen_pi_false %>% 
   filter(seq_s == .x)) %>% 
@@ -328,7 +342,7 @@ transcripts_pi_hg38_clean <- transcripts_pi_hg38 %>%
 transcripts_pi_hg38_clean %>% count(name) %>% nrow #>  23,116 piRNAs final piRNABANK
 ```
 ### vii. RNAcentral. + piRNABank. make annotation tibble
-create a tibble with that information of RNAcentral and piRNAbank sequences and IDs
+create a tibble with the information of RNAcentral, piRNAbank sequences and IDs
 ```{r annotation tibble}
 hg38_piBAnk_RCent <- transcripts_GR %>% 
   left_join(piRNAbank_hg38_tib, by = c("dna" = "seq_piBn")) 
@@ -350,7 +364,8 @@ concated_hg38_piBAnk <- hg38_piBAnk_RCent  %>%
       is.na(sRNA_type) ~ sRNA_id2,
       TRUE ~ name
     )
-  )
+  ) %>% 
+  select(seq_RCent, seq_id, gene_type,sRNA_id,sRNA_id2,  everything())
 
 # sanity checks 1 ----
 ## checking for the NA values, should be only true
@@ -379,7 +394,8 @@ fun_unm <- function(x){
 concated_hg38_piBAnk %>% 
   count(gene_type) %>% 
   .$gene_type %>% set_names(.) %>%  
-  map(~fun_unm(.x))
+  map(~fun_unm(.x)) %>% 
+  bind_rows(.id = "ID")
 
 ## checking for the piRNA values
 is.na(concated_hg38_piBAnk$seq_id) %>% table
@@ -429,24 +445,17 @@ tr_test %>% filter(sRNA_id == "URS00001B5714")
 ### viii. RNAcentral + piRNABank. generation of GRs
 
 ```{r GRs generation}
-concated_hg38_piBAnk  # df with combined sequences piRNAbank+RNAcentral
-transcripts_pi_hg38_clean # has all alignments from piRNAbank 
-tr_sRNA # has the ranges with less than 100 bp from RNAcentral
+concated_hg38_piBAnk  # dataframe with combined sequences piRNAbank+RNAcentral
+transcripts_pi_hg38_clean # dataframe that has filtered alignments from piRNAbank 
 
 # here we change the small-RNA category of a piRNA from piRNABank if it is found 
 # in RNACentral with another small-RNA category
 c_piBNK_RCent <- concated_hg38_piBAnk %>%
-  full_join(transcripts_pi_hg38_clean, by = c("dna", 
-    "name", "sRNA_type", "seq_RCent" =  "seq_piBNK")) %>% 
-  select(
-    seq_RCent, 
-    sRNA_id, 
-    name, 
-    seq_id, 
-    gene_type, 
-    sRNA_type, 
-    everything()) %>%
-  mutate(source = 
+  full_join(transcripts_pi_hg38_clean, 
+            by = c("dna", "name", "sRNA_type", "seq_RCent" =  "seq_piBNK")) %>% 
+  select(seq_RCent, sRNA_id, name, seq_id, gene_type, sRNA_type, everything()) %>%
+  mutate(
+    source = 
       case_when(
         is.na(source) ~ "piRNA_BANK",
         !is.na(sRNA_type) ~ str_c("piRNA_BANK,",source),
@@ -467,14 +476,13 @@ c_piBNK_RCent <- concated_hg38_piBAnk %>%
       
 
 names(c_piBNK_RCent) 
-
 c_piBNK_RCent %>% count(sRNA_id, sort = T)
 
 c_piBNK_RCent %>% count(name, sort = T)
 
 c_piBNK_RCent %>% count(seq_id, sort = T)
 
-c_piBNK_RCent %>% count(gene_type, sort = T)
+c_piBNK_RCent %>% count(gene_type, sort = T)# GR per gene_type
 
 c_piBNK_RCent %>% count(source, sort = T)
 
@@ -486,7 +494,7 @@ c_piBNK_RCent %>% count(sRNA_id2, sort = T)
 
 c_piBNK_RCent %>% count(bpairs_piR, sort = T)
 
-# final Genomic ranges -----
+# combined Genomic ranges -----
 c_piBNK_RCent_GR <- c_piBNK_RCent %>% 
   select(-name, -sRNA_type, -bpairs_piR) %>% 
   rename( dna = "seq_RNA") %>% 
@@ -496,7 +504,83 @@ c_piBNK_RCent_GR <- c_piBNK_RCent %>%
     end = as.numeric(end),
     width = as.numeric(width)) %>% 
   as_granges
+```
+### ix.  Reclassifying to miscellaneous piRNA
 
+Studies of Tosar et. al[1](https://pubmed.ncbi.nlm.nih.gov/33376191/) [2](https://pubmed.ncbi.nlm.nih.gov/30271890/) have demonstrated that some piRNAs
+sequences can been found inside other small non-coding RNAs or genes.
+These "piRNA" most probably are mRNA or ncRNA fragments that have been misstyped 
+as such.
+For this reason we will follow the advise of using a second category for piRNAs
+ found inside other genomic features typed as misc_piRNA. 
+Always consider to back up the specific sequences of interest with
+wet lab experiments (after the smallRNA sequencing).
+
+We will first evaluate which Biotypes we should use from
+gencode annotation regarding the piRNAs inside them
+We will use a cut-off of at least 1 base of overlap with the piRNA sequence
+```{r miscellaneous piRNA}
+gene_annot <- read_gff2("human_data/gencode.v36.primary_assembly.annotation.gtf.gz")
+
+# how many GRs for each type are in the gencode annotation:
+gene_annot %>% 
+  as_tibble %>% 
+  count(type, sort = T)#exon:1430132,CDS:790404...
+# how many GRs for type per gene_type are in the gencode annotation:
+gene_annot %>% 
+  as_tibble %>% 
+  count(type, gene_type, sort = T)
+
+#filter gene_annot for only exon and CDS
+gene_annot_exon_CDS <- gene_annot %>% filter(type %in% c("exon", "CDS"))
+
+#filter exon and CDS for protein_coding and immunoglobulin gene
+gene_annot_exon_CDS_prot_cod <- gene_annot_exon_CDS %>% 
+  filter(type %in% c("exon", "CDS"), 
+         str_detect(gene_type, "protein_coding|IG_|TR_"))
+
+# we will consider overlapping piRNAs with exon and CDS of protein_coding first
+c_piRNAs_GR_prot_cod <- c_piBNK_RCent_GR %>% # GR = 155.143
+  filter(gene_type == "piRNA") %>% # GR = 139.196
+  find_overlaps_directed(gene_annot_exon_CDS_prot_cod, maxgap = -1L, 
+                         minoverlap = 1L, suffix = c("_piRNAs", "_genes")) %>% 
+  select(starts_with(c("gene_","typ"))) %>% 
+  as_tibble() %>% 
+  unite(col = "seq_piBNK", seqnames:strand, sep = "_") %>% 
+  distinct(seq_piBNK, .keep_all = TRUE) # GR = 5.643 to be excluded
+
+# exclude them from combined ranges
+c_piBNK_RCent_GR_filtered <- c_piBNK_RCent_GR %>% 
+  as_tibble() %>% 
+  unite(col = "seq_piBNK", seqnames:strand, sep = "_") %>% 
+  filter(!seq_piBNK %in% c_piRNAs_GR_prot_cod$seq_piBNK) %>% 
+  separate(col = seq_piBNK,
+           into = c("seqnames", "start","end","width","strand"), 
+           sep = "_", convert = TRUE) %>% 
+  as_granges() #149.500
+
+# miscellaneous piRNA would be categorized looking at the overlap with sequences of categories of these 25 types(containing pseudogenes and smallRNAs):
+gene_annot_exon_CDS %>% 
+  filter(!gene_type %in% gene_annot_exon_CDS_prot_cod$gene_type) %>% 
+  as_tibble %>% count(gene_type, sort = T) %>%  .$gene_type
+
+# overlaps
+gene_annot_misc_piRNA <- gene_annot_exon_CDS %>% 
+  filter(!gene_type %in% gene_annot_exon_CDS_prot_cod$gene_type) 
+
+misc_piRNAs_GR_filt <- c_piBNK_RCent_GR_filtered %>% 
+  filter(gene_type == "piRNA") %>% # GR = 133.553
+  find_overlaps_directed(gene_annot_misc_piRNA, maxgap = -1L, 
+                         minoverlap = 1L, suffix = c("_piRNAs", "_genes")) %>% 
+  select(starts_with(c("gene_","typ"))) %>%
+  as_tibble() %>% 
+  unite(col = "seq_piBNK", seqnames:strand, sep = "_") %>% 
+  distinct(seq_piBNK, .keep_all = TRUE) # GR = 12.889 to be recategorized
+
+
+```
+
+```{r  }
 c_piBNK_RCent_GR %>%
   as_tibble() %>% 
   arrange(desc(width)) %>% 
@@ -508,7 +592,7 @@ c_piBNK_RCent_GR %>%
   filter(gene_type == "piRNA") %>% 
   plyranges::reduce_ranges_directed() %>% 
   as_tibble() %>% 
-  filter(width > 40) %>% 
+  filter(width > 100) %>% 
   arrange(desc(width)) %>% 
   count(width, sort = T) %>% view
   
@@ -517,7 +601,8 @@ piRNAbank_rCentral_seqs <- Views(BSgenome.Hsapiens.UCSC.hg38, c_piBNK_RCent_GR)
 
 piRNAbank_rCentral_seqs %>%
   as_granges() %>% 
-  as_tibble() %>% mutate( is_it_TR = (seq_RNA == dna)) %>% 
+  as_tibble() %>% 
+  mutate( is_it_TR = (seq_RNA == dna)) %>% 
   filter(is_it_TR == FALSE)# should be 0
 
 # final objects to export-----
