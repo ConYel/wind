@@ -646,7 +646,7 @@ puzzling_piRNAs <- complete_piBnk_RCent %>%
 
 # calculating the ratio of misc_piRNA to piRNA GRs and summarizing
 complete_piBnk_RCent %>% 
-  filter(seq_id %in% puzzling_piRNAs$seq_id) %>% # 60.829 GRs
+  filter(seq_id %in% puzzling_piRNAs$seq_id) %>% # 60.829 GRs, 2.693 are misc_piRNA
   group_by(seq_id) %>% 
   count(gene_type) %>% 
   summarise(
@@ -655,14 +655,13 @@ complete_piBnk_RCent %>%
 
 # calculating which gene_type are the "puzzling" piRNAs are inside
 explor_puzzling_piRNAs <- complete_piBnk_RCent %>% 
-  filter(seq_id %in% puzzling_piRNAs$seq_id) %>% # 60.829 GRs
+  filter(seq_id %in% puzzling_piRNAs$seq_id) %>% 
   separate(GENCODE_annot, 
            into = c("gene_name", "gene_id", "transcript_id", "gene_type_GENC", "tag"), 
            sep = "_GNC_") %>% 
   separate(RNACent_annot,
            into = c("seq_id_Rcentral", "gene_type_Rcentral"),
            sep = "_geneType_")
-
 
 # search puzzling_piRNAs gene_types in GENCODE 
 explor_puzzling_piRNAs %>% 
@@ -672,7 +671,13 @@ explor_puzzling_piRNAs %>%
 # search puzzling_piRNAs gene_types in RNACENTRAL 
 explor_puzzling_piRNAs %>% 
   filter(!is.na(gene_type_Rcentral)) %>% 
-  count(gene_type_Rcentral, sort = TRUE)
+  count(gene_type_Rcentral,gene_type_GENC, sort = TRUE)
+```
+
+
+
+```{r}
+
 ```
 
 
