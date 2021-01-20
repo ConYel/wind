@@ -519,7 +519,10 @@ wet lab experiments (after the smallRNA sequencing).
 We will first evaluate which Biotypes we should use from
 gencode annotation regarding the piRNAs inside them
 We will use a cut-off of at least 1 base of overlap with the piRNA sequence
-```{r miscellaneous piRNA}
+
+We filter the GRs that are found inside protein coding of CDS and exon tags
+
+```{r filtering proteing coding GRs}
 gene_annot <- read_gff2("human_data/gencode.v36.primary_assembly.annotation.gtf.gz")
 
 # how many GRs for each type are in the gencode annotation:
@@ -558,62 +561,122 @@ c_piBNK_RCent_GR_filtered <- c_piBNK_RCent_GR %>%
            into = c("seqnames", "start","end","width","strand"), 
            sep = "_", convert = TRUE) %>% 
   as_granges() #149.500
+```
+Then we need to find those GRs that are inside pseudogenes and smallRNAs
 
-# miscellaneous piRNA would be categorized looking at the overlap with sequences of categories of these 25 types(containing pseudogenes and smallRNAs):
+```{r miscellaneous piRNA GENCODE}
+# miscellaneous piRNA would be categorized as those that overlap with sequences of categories of these 25 types(containing pseudogenes and smallRNAs) from GENCODE:
 gene_annot_exon_CDS %>% 
   filter(!gene_type %in% gene_annot_exon_CDS_prot_cod$gene_type) %>% 
   as_tibble %>% count(gene_type, sort = T) %>%  .$gene_type
 
-# overlaps
+# keep only the sequences of the 25 types
 gene_annot_misc_piRNA <- gene_annot_exon_CDS %>% 
   filter(!gene_type %in% gene_annot_exon_CDS_prot_cod$gene_type) 
 
+# make a dataframe with the overlapping GRs of piRNAs
 misc_piRNAs_GR_filt <- c_piBNK_RCent_GR_filtered %>% 
   filter(gene_type == "piRNA") %>% # GR = 133.553
   find_overlaps_directed(gene_annot_misc_piRNA, maxgap = -1L, 
                          minoverlap = 1L, suffix = c("_piRNAs", "_genes")) %>% 
-  #select(starts_with(c("gene_","typ"))) %>%
   as_tibble() %>% 
   unite(col = "seq_piBNK", seqnames:strand, sep = "_") %>% 
-  distinct(seq_piBNK, .keep_all = TRUE) %>% # GR = 12.889 to be recategorized
-  select(seq_piBNK, seq_id, gene_name, gene_id, transcript_id, tag) %>% 
-  unite(col = "newseq_id",c(seq_id,gene_name), sep = "_Gname_") %>% 
-  unite(col = "GENCODE_annot", gene_id:tag, sep = "_GNC_")
+  distinct(seq_piBNK, .keep_all = TRUE) %>% # GR = 12.899 to be recategorized
+  select(seq_piBNK, gene_name, gene_id, transcript_id, gene_type_genes,tag) %>% 
+  unite(col = "GENCODE_annot", gene_name:tag, sep = "_GNC_")
+```
+Following this strategy we will also find the GRs of piRNAs that are inside 
+the data we have from RNAcentral.
 
-# misc_piRNAs
+```{r miscellaneous piRNA RNAcentral}
+# remove the GRs of piRNAs
+RCent_GRs_nopiRNA <- c_piBNK_RCent_GR_filtered %>% 
+  filter(gene_type != "piRNA") #15.947 GRs of other smallRNAs
+
+# make a dataframe with the overlapping GRs of piRNAs
+misc_piRNAs_GR_RCent_filt <- c_piBNK_RCent_GR_filtered %>% 
+  filter(gene_type == "piRNA") %>% 
+  find_overlaps_directed(RCent_GRs_nopiRNA,
+                         maxgap = -1L, 
+                         minoverlap = 1L, 
+                         suffix = c("_piRNA", "_Rcentral")) %>% 
+  as_tibble() %>%
+  unite(col = "seq_piBNK", seqnames:strand, sep = "_") %>%
+  distinct(seq_piBNK, .keep_all = TRUE) %>% 
+  select(seq_piBNK, seq_id_Rcentral, gene_type_Rcentral) %>% 
+  unite(col = "RNACent_annot", seq_id_Rcentral:gene_type_Rcentral, 
+        sep = "_geneType_")
+```
+
+Using the information from both RNACENTRAL and GENECODE
+we can merge and add it to the final gtf as extra information
+
+```{r miscellaneous piRNA merge}
+misc_piRNAs_GR <- misc_piRNAs_GR_RCent_filt %>% 
+  full_join(misc_piRNAs_GR_filt) %>% 
+  mutate(across(.cols = c(RNACent_annot, GENCODE_annot),
+                .fns = ~if_else(is.na(.x),"no_overlap",.x)))
+
+# complete GRs with misc_piRNAs
 complete_piBnk_RCent <- c_piBNK_RCent_GR_filtered %>% 
   as_tibble() %>% 
   unite(col = "seq_piBNK", seqnames:strand, sep = "_") %>% 
-  left_join(misc_piRNAs_GR_filt) %>% 
-  mutate(gene_id = 
+  left_join(misc_piRNAs_GR) %>% 
+  mutate( gene_type =
            case_when(
-             is.na(newseq_id) ~ seq_id,
-             TRUE ~ newseq_id),
-         gene_type =
-           case_when(
-             is.na(newseq_id) ~ gene_type,
-             TRUE ~ "misc_piRNA")
+             is.na(RNACent_annot) & is.na(GENCODE_annot) ~ gene_type,
+             TRUE ~ "misc_piRNA"), 
+          across(.cols = c(RNACent_annot, GENCODE_annot),
+                 .fns = ~if_else(is.na(.x),"no_overlap",.x))
            ) %>% 
-  select(seq_piBNK, gene_id, everything())
+  select(seq_piBNK, seq_id, RNACent_annot, GENCODE_annot, everything())
+```
+Unfortunately, some of the piRNAs which were recategorized
+as misc_piRNA have Genomic Ranges that are not overlapping with 
+any other genomic features. 
+This implies that we have to consider how to categorize them
+as they will have some GRs inside various genomic features
+(smallRNAs, pseudogenes, etc) and other GRs in "unique" regions.
 
+```{r  misc_piRNAs and piRNAs}
+# finding the "puzzling" piRNAs
+puzzling_piRNAs <- complete_piBnk_RCent %>% 
+  count(seq_id, gene_type, sort = T) %>% 
+  filter(duplicated(seq_id))# 1.055 puzzling piRNA sequences from 27.963
 
-
-
+# calculating the ratio of misc_piRNA to piRNA GRs and summarizing
 complete_piBnk_RCent %>% 
-  distinct(gene_id,.keep_all = T) %>% 
-  filter(gene_type %in% c("piRNA","misc_piRNA")) %>% 
-  arrange(seq_id) %>% 
-  select(seq_piBNK:seq_id,newseq_id) %>% filter(seq_id =="hsa_piR_008764_DQ581894")
-  count(seq_id,sort = T)
+  filter(seq_id %in% puzzling_piRNAs$seq_id) %>% # 60.829 GRs
+  group_by(seq_id) %>% 
+  count(gene_type) %>% 
+  summarise(
+    ratio = log(n[gene_type == "misc_piRNA"]/n[gene_type == "piRNA"])) %>% 
+  summary()
+
+# calculating which gene_type are the "puzzling" piRNAs are inside
+explor_puzzling_piRNAs <- complete_piBnk_RCent %>% 
+  filter(seq_id %in% puzzling_piRNAs$seq_id) %>% # 60.829 GRs
+  separate(GENCODE_annot, 
+           into = c("gene_name", "gene_id", "transcript_id", "gene_type_GENC", "tag"), 
+           sep = "_GNC_") %>% 
+  separate(RNACent_annot,
+           into = c("seq_id_Rcentral", "gene_type_Rcentral"),
+           sep = "_geneType_")
+
+
+# search puzzling_piRNAs gene_types in GENCODE 
+explor_puzzling_piRNAs %>% 
+  filter(!is.na(gene_type_GENC)) %>% 
+  count(gene_type_GENC, sort = TRUE) 
+
+# search puzzling_piRNAs gene_types in RNACENTRAL 
+explor_puzzling_piRNAs %>% 
+  filter(!is.na(gene_type_Rcentral)) %>% 
+  count(gene_type_Rcentral, sort = TRUE)
 ```
 
-```{r  }
-c_piBNK_RCent_GR %>%
-  as_tibble() %>% 
-  arrange(desc(width)) %>% 
-  count(width, gene_type, sort =T) %>% 
-  write_tsv("piRNAbank_RNACentral_bp_info.txt")
 
+```{r  misc_piRNAs and piRNAs}
 # possible "clusters" of piRNA -----
 c_piBNK_RCent_GR %>%
   filter(gene_type == "piRNA") %>% 
