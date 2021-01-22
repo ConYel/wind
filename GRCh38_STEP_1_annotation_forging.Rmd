@@ -69,38 +69,39 @@ Databases that have been used:
 ## 1. Acquisition and Preprocessing of the small non-coding RNA (ncRNA) sequences
 ### i. Downloading the files for the generation of a Gene transfer format(gtf) 
 
-To begin with, Human piRNA sequences were downloaded from piRNABank to enrich 
-in piRNA sequences the gtf file, and small RNA genome coordinates(bed files) 
-from RNAcentral have been acquired.
+To begin with, Human piRNA sequences are downloaded from piRNABank to enrich 
+in piRNA sequences the gtf file, and we get the small RNA genome 
+coordinates(bed files) from RNAcentral.
+
 ```{bash download the Databases}
 # all the files and folders for the workflow are created in the working directory 
-# plus the results of the analysis
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 
-mkdir -p my_data/human_data/hg38
+#create the folder that will have the genome and smallRNA sequences information
+mkdir -p my_data/human_data/GRCh38 my_data/human_data/piRNABank my_data/human_data/RNACentral
 
-# downloading the piRNAbank sequences
-wget http://pirnabank.ibab.ac.in/downloads/all/human_all.zip -O my_data/human_data/human_all.zip
+# download the piRNAbank sequences
+wget http://pirnabank.ibab.ac.in/downloads/all/human_all.zip -O my_data/human_data/piRNABank/piRNA_human_all.zip
 
-unzip -d my_data/human_data/  my_data/human_data/human_all.zip
+unzip -d my_data/human_data/piRNABank  my_data/human_data/piRNABank/piRNA_human_all.zip && rm my_data/human_data/piRNABank/piRNA_human_all.zip
 
-# downloading the RNAcentral genomic coordinates
+# download the RNAcentral genomic coordinates
 wget ftp://ftp.ebi.ac.uk/pub/databases/RNAcentral/current_release/\
-genome_coordinates/bed/homo_sapiens.GRCh38.bed.gz -O my_data/human_data/homo_sapiens.GRCh38.bed.gz
+genome_coordinates/bed/homo_sapiens.GRCh38.bed.gz -O my_data/human_data/RNACentral/homo_sapiens.GRCh38.bed.gz
 
-# GRCh38 fasta for STAR index 
-wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_34/GRCh38.primary_assembly.genome.fa.gz -O my_data/human_data/hg38/GRCh38.primary_assembly.genome.fa.gz
+# get the GRCh38 fasta for STAR index 
+wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_34/GRCh38.primary_assembly.genome.fa.gz -O my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa.gz
 
-pigz -d my_data/human_data/hg38/GRCh38.primary_assembly.genome.fa.gz 
+pigz -d my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa.gz 
 
-# GRCh38 annotation in order to exclude sequences of piRNA
-# that are inside other sequences
-wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_36/gencode.v36.primary_assembly.annotation.gtf.gz -O my_data/human_data/hg38/gencode.v36.primary_assembly.annotation.gtf.gz
+# get the GRCh38 annotation in order to exclude sequences of piRNA
+# that are inside other sequences see 2.ix. chunk
+wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_34/gencode.v34.primary_assembly.annotation.gtf.gz -O my_data/human_data/GRCh38/gencode.v34.primary_assembly.annotation.gtf.gz
 ```
 ### ii. Preprocessing of the piRNAbank file
 
 The fasta file from piRNAbank has U character instead of T in the sequences, 
-so changes have been made using [sed](https://www.gnu.org/software/sed/)
+so we can make an adjustment using [sed](https://www.gnu.org/software/sed/)
 ```{bash sed fasta}
 sed 's/U/T/g' my_data/human_data/human_pir.txt > my_data/human_data/pirnaBank_human.fasta
 # exit docker container
@@ -115,23 +116,25 @@ docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
 ```
 We prefer to work on Rstudio to perform everything on R otherwise R on 
 bash could be used directly. We load the libraries that would assist us
-in creation of the fasta file.
+in the creation of the piRNAbank fasta file.
+
 ```{r load the libraries I}
 suppressPackageStartupMessages({
   library('stringr')
   library('plyranges')
+  library('magrittr')
 })
 ```
 
 In the piRNABank fasta duplicated sequences exist and need to be removed
 ```{r remove duplicates}
 # import the fasta  ----
-pirnaB_hg19 <- Biostrings::readDNAStringSet("human_data/pirnaBank_human.fasta")
-pirnaB_hg19 %>% length() ## >[1] 667,944 seq
+pirnaB_hg19 <- Biostrings::readDNAStringSet("human_data/piRNABank/pirnaBank_human.fasta")
+pirnaB_hg19 %>% length() ## should be: 667,944 sequences
 
 # remove duplicated sequences---- 
 pirnaB_hg19 <- pirnaB_hg19[!duplicated(pirnaB_hg19)]
-pirnaB_hg19 %>% length() ## >[1] 23,439 seq
+pirnaB_hg19 %>% length() ##  23.439 sequences
 
 # clean the names----
 names(pirnaB_hg19) <- names(pirnaB_hg19) %>% 
@@ -140,32 +143,31 @@ names(pirnaB_hg19) <- names(pirnaB_hg19) %>%
 
 # write the fasta ----
 pirnaB_hg19 %>% 
-  Biostrings::writeXStringSet("human_data/piRNAbank_hg19_removed_duplicates.fa")
+  Biostrings::writeXStringSet("human_data/piRNABank/piRNAbank_hg19_rem_duplic.fa")
 ```
 exit the docker container
+
 ```{bash exit bioc}
 # exit docker container
 exit
 ```
 ### iv. Align piRNA sequences to human genome
 
-Afterwards, alignment of piRNA sequences to the human genome 
-utilizing STAR aligner has been performed.
-Then, samtools has been used to export the sequences in fasta format
+We proceed with the alignment of piRNA sequences to the human genome 
+utilizing STAR aligner and export them in fasta format
+
 ```{bash STAR_SAM}
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 
 # create index
-STAR --runMode genomeGenerate --genomeDir my_data/human_data/hg38 --genomeFastaFiles my_data/human_data/hg38/GRCh38.primary_assembly.genome.fa --runThreadN 14
-
-mkdir my_data/piRNABank_human_hg38
-
+STAR --runMode genomeGenerate --genomeDir my_data/human_data/GRCh38_v34 --genomeFastaFiles my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa --runThreadN 4 && cp Log.out my_data/human_data/GRCh38_v34/Log.out
+ 
 # align the piRNABank sequences
-STAR --genomeDir hg38/ --genomeLoad LoadAndKeep \
---readFilesIn "my_data/human_data/piRNAbank_hg19_removed_duplicates.fa"  \
---runThreadN 10 --alignIntronMax 0 --outSAMattributes NH HI NM MD \
+STAR --genomeDir GRCh38_v34/ --genomeLoad LoadAndKeep \
+--readFilesIn "my_data/human_data/piRNABank/piRNAbank_hg19_rem_duplic.fa"  \
+--runThreadN 4 --alignIntronMax 0 --outSAMattributes NH HI NM MD \
 --outFilterMultimapNmax 100 --outReadsUnmapped Fastx --outFilterMismatchNmax 0 \
---outFilterMatchNmin 16 --outFileNamePrefix "my_data/piRNABank_human_hg38/piBnk38_"
+--outFilterMatchNmin 16 --outFileNamePrefix "my_data/human_data/piRNABank/piBnk38_"
 
 # sort the sam file
 samtools sort -O bam -o my_data/piRNABank_human_hg38/piBnk38_sorted.bam -@ 10 \
@@ -639,23 +641,23 @@ as they will have some GRs inside various genomic features
 (smallRNAs, pseudogenes, etc) and other GRs in "unique" regions.
 
 ```{r  misc_piRNAs and piRNAs}
-# finding the "puzzling" piRNAs
-puzzling_piRNAs <- complete_piBnk_RCent %>% 
+# finding the "ambiguous" piRNAs
+ambiguous_piRNAs <- complete_piBnk_RCent %>% 
   count(seq_id, gene_type, sort = T) %>% 
-  filter(duplicated(seq_id))# 1.055 puzzling piRNA sequences from 27.963
+  filter(duplicated(seq_id))# 1.055 ambiguous piRNA sequences from 27.963
 
 # calculating the ratio of misc_piRNA to piRNA GRs and summarizing
 complete_piBnk_RCent %>% 
-  filter(seq_id %in% puzzling_piRNAs$seq_id) %>% # 60.829 GRs, 2.693 are misc_piRNA
+  filter(seq_id %in% ambiguous_piRNAs$seq_id) %>% # 60.829 GRs, 2.693 are misc_piRNA
   group_by(seq_id) %>% 
   count(gene_type) %>% 
   summarise(
     ratio = log(n[gene_type == "misc_piRNA"]/n[gene_type == "piRNA"])) %>% 
   summary()
 
-# calculating which gene_type are the "puzzling" piRNAs are inside
-explor_puzzling_piRNAs <- complete_piBnk_RCent %>% 
-  filter(seq_id %in% puzzling_piRNAs$seq_id) %>% 
+# calculating which gene_type are the "ambiguous" piRNAs are inside
+explor_ambiguous_piRNAs <- complete_piBnk_RCent %>% 
+  filter(seq_id %in% ambiguous_piRNAs$seq_id) %>% 
   separate(GENCODE_annot, 
            into = c("gene_name", "gene_id", "transcript_id", "gene_type_GENC", "tag"), 
            sep = "_GNC_") %>% 
@@ -663,13 +665,13 @@ explor_puzzling_piRNAs <- complete_piBnk_RCent %>%
            into = c("seq_id_Rcentral", "gene_type_Rcentral"),
            sep = "_geneType_")
 
-# search puzzling_piRNAs gene_types in GENCODE 
-explor_puzzling_piRNAs %>% 
+# search ambiguous_piRNAs gene_types in GENCODE 
+explor_ambiguous_piRNAs %>% 
   filter(!is.na(gene_type_GENC)) %>% 
   count(gene_type_GENC, sort = TRUE) 
 
-# search puzzling_piRNAs gene_types in RNACENTRAL 
-explor_puzzling_piRNAs %>% 
+# search ambiguous_piRNAs gene_types in RNACENTRAL 
+explor_ambiguous_piRNAs %>% 
   filter(!is.na(gene_type_Rcentral)) %>% 
   count(gene_type_Rcentral,gene_type_GENC, sort = TRUE)
 ```
