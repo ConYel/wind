@@ -759,7 +759,7 @@ gtf_piB_RCentr %>%
 ```
 
 Until now, we have prepared the files for annotation and quantification of 
-smallRNA sequencing samples of human transciptome. 
+smallRNA sequencing samples of human transcriptome. 
 Afterwards, the steps in the pre-processing of the samples, alignment, quantification and calculation of transcript abundances should be followed.
 
 ## 4. Optional* Make the indexes for STAR and salmon with spike-in sequences
@@ -847,17 +847,25 @@ my_data/human_data/GRCh38_v34_spike_ins_STAR/spike_GRCh38_v34 \
 
 # following the instructions for salmon decoy aware indexing
 # https://combine-lab.github.io/alevin-tutorial/2019/selective-alignment/
-grep "^>" <my_data/ncRNA_genome_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa | cut -d " " -f 1 > my_data/decoys.txt
+grep "^>" my_data/human_data/genome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta |cut -d " " -f 1 > my_data/human_data/decoys.txt
 
-sed -i.bak -e 's/>//g' my_data/decoys.txt
+sed -i.bak -e 's/>//g' my_data/human_data/decoys.txt
 
-cat my_data/ncRNA_transcripts_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa my_data/ncRNA_genome_Spike_ins_100bp_RNA_Central_piRNAbank_hg38.fa > gentrome_piRNAbank_Central.fa
+fcat my_data/human_data/genome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta  my_data/human_data/transcriptome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta > my_data/human_data/gentrome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta
 
+pigz --best  my_data/human_data/gentrome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta 
+
+fcat my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa  my_data/human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.fa > my_data/human_data/gentrome_sncRNA_piRNBnk_RNACent_GRCh38_v34.fasta
+
+pigz --best  my_data/human_data/gentrome_sncRNA_piRNBnk_RNACent_GRCh38_v34.fasta 
+
+mkdir GRCh38_v34_salmon
 exit
 # run the docker
 docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
 # create the index
 ## *remove manually the spike-ins chrs from decoys
-salmon index -t my_data/gentrome_piRNAbank_Central.fa -d my_data/decoys.txt -i my_data/ncRNA_Central_piRNAB_hg38_index -k 15 -p 10
+salmon index -t my_data/human_data/gentrome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta.gz -d my_data/human_data/decoys.txt -i my_data/human_data/GRCh38_v34_spike_ins_salmon/GRCh38_v34_spike_ins_index -k 15 -p 10
+
 exit
 ```
