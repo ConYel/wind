@@ -18,25 +18,32 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ```
-## The Data set
+# The Data set
 
-We will work on a public dataset uploaded on ArrayExpress with id: [E-MTAB-8115](https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-8115/samples/),
+We will work on the datasets uploaded on ArrayExpress with id: [E-MTAB-8115](https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-8115),
+[E-MTAB-9782]()
+[E-MTAB-9772](https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-9772)
 that it has been used in the publication: __[Molecular and Functional Characterization of the Somatic PIWIL1/piRNA Pathway in Colorectal Cancer Cells](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6912267/)__ and some other samples from testis tissue.
 
-## Data aqcuisition and preprocessing  
+## 1. Data aqcuisition and preprocessing  
 
 ### i. Downloading the samples
 
-We use a script to download the fastq samples with samtools-kit that it is included in the docker with the name download_SRA.sh
-
-Using the  __[SRA selector](https://www.ncbi.nlm.nih.gov/Traces/study/?acc=PRJNA282131)__ we download a file with the Accession List and rename the file
-to __GSE68246_samples.txt__
+We will use the [fastq-dl](https://github.com/rpetit3/fastq-dl) tool to download
+the samples from the European Nucleotide Archive
 
 ```{bash download samples}
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 
-# run the script to download the SRA
-./download_SRA.sh GSE124507_samples.txt 8
+# run the script to download the fastqs
+fastq-dl --cpus 4 --prefix "PRJEB41397" \
+--outdir my_data/Datasets_analysis/Testis_COLO205/downloaded_samples PRJEB41397 ENA 
+
+fastq-dl --cpus 4 --prefix "PRJEB33349" \
+--outdir my_data/Datasets_analysis/Testis_COLO205/downloaded_samples PRJEB33349 ENA 
+
+fastq-dl --cpus 4 --prefix "PRJEB41418" \
+--outdir my_data/Datasets_analysis/Testis_COLO205/downloaded_samples PRJEB41418 ENA 
 ```
 
 ### ii. Preprocessing of the samples
@@ -44,22 +51,45 @@ We perform quality control(QC) on the fastq files to get basic information about
 We work with the __[Fastqc](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)__ tool to perform QC.
 
 ```{bash preprocessing}
-mkdir my_data/qc_first
+ANALYSIS_FOLDER="my_data/Datasets_analysis/Testis_COLO205"
 
-'fastqc' --threads 6 --outdir=my_data/qc_first/ my_data/samples/*.fastq.gz
+mkdir "${ANALYSIS_FOLDER}"/qc_before_trim "${ANALYSIS_FOLDER}"/qc_after_trim \
+"${ANALYSIS_FOLDER}"/quants  "${ANALYSIS_FOLDER}"/star
 
-for file in my_data/samples/*.fastq.gz;  
+'fastqc' --threads 8 --outdir="${ANALYSIS_FOLDER}"/qc_before_trim \
+"${ANALYSIS_FOLDER}"/downloaded_samples/*fastq.gz 
+
+for file in "${ANALYSIS_FOLDER}"/downloaded_samples/*.fastq.gz;  
 do 
-./spar_prepare/smrna_adapter_cut.sh $file 6; 
+./spar_prepare/smrna_adapter_cut.sh $file 7; 
 done
 
-mkdir my_data/samples/qc_after
+'fastqc' --threads 8 --outdir="${ANALYSIS_FOLDER}"/qc_after_trim \
+"${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz
+```
+## 2. Alignment and Quantification
+### i. Alignment with STAR
+We use the __[STAR](https://github.com/alexdobin/STAR)__ aligner and then
+perform quantification with featureCounts of __[Rsubread](https://www.bioconductor.org/packages/release/bioc/html/Rsubread.html)__ package.
 
-'fastqc' --threads 6 --outdir=my_data/qc_after/ my_data/samples/*.trimmed.fastq.gz
+```{bash STAR}
+for file in  "${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz; 
+do 
+samp=`basename ${file}`; 
+regex="${samp%%.trimmed.fastq.gz}"; 
+echo "Processing sample ${samp} start: $(date)"; 
+STAR --genomeDir my_data/human_data/GRCh38_v34_spike_ins_STAR/spike_GRCh38_v34 \
+--genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat \
+--runThreadN 6 --alignIntronMax 1 --outSAMattributes NH HI NM MD \
+--outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate \
+--limitBAMsortRAM 40000000000 --outReadsUnmapped Fastx \
+--outFilterMismatchNmax 1 --outFilterMatchNmin 14 \
+--outFileNamePrefix "${ANALYSIS_FOLDER}/star/${regex}_align/${regex}_";  
+echo "end:$(date)";
+done
 
 exit
 ```
-## Alignment and Quantification
 ### i. Transcript abundances with __[Salmon](https://github.com/COMBINE-lab/salmon)__
 
 We will use a public docker image to run salmon
@@ -88,32 +118,6 @@ do
 regex="${file%%.sam}";
 echo samtools view -O bam -o ${regex}.bam -@ 6 ${file};
 done
-exit
-```
-### Alignment and quantification of sequenced reads with STAR and Featurecounts 
-
-We use the __[STAR](https://github.com/alexdobin/STAR)__ aligner and then
-perform quantification with featureCounts from __[Rsubread](https://www.bioconductor.org/packages/release/bioc/html/Rsubread.html)__ package.
-With the a docker images that contains STAR and __[Samtools](https://www.htslib.org/)__
-we get sorted BAM files and use them for quantification / annotation for smallRNAs.
-
-### ii. Alignment with STAR
-
-```{bash STAR}
-docker run --rm -ti -v "$PWD":/home/my_data congelos/sncrna_workflow
-
-STAR --runMode genomeGenerate --genomeDir my_data/mouse_data/GRCh38 --genomeFastaFiles my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa --runThreadN 6
-
-mkdir my_data/testis_colo_pub_workflow/star
-
-for file in my_data/testis_colo_pub_workflow/samples/*.trimmed.fastq.gz; 
-do 
-samp=`basename ${file}`; regex="${samp%%.trimmed.fastq.gz}"; 
-echo "Processing sample ${samp} start: $(date)"; 
-STAR --genomeDir my_data/genome_transc_human/human_data/GRCh38_2_7_4a --genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat --runThreadN 12 --alignIntronMax 1 --outSAMattributes NH HI NM MD --outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate --limitBAMsortRAM 40000000000 --outReadsUnmapped Fastx --outFilterMismatchNmax 1 --outFilterMatchNmin 14 --outFileNamePrefix "my_data/testis_colo_pub_workflow/star/${regex}_align/${regex}_";  
-echo "end:$(date)";
-done
-
 exit
 ```
 
