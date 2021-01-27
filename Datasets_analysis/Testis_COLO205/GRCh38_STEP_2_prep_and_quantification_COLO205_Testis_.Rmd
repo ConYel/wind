@@ -98,22 +98,23 @@ We will use a public docker image to run salmon
 # run the docker
 docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
 
-# create the index
-salmon index -t ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.fa -i genome_transc_human/ncRNA_Central_piRNAB_hg38_index -k 15 -p 10
+ANALYSIS_FOLDER="my_data/Datasets_analysis/Testis_COLO205"
 
-mkdir my_data/quants/
 # run the samples
 
-#!/bin/bash
- 
-for fn in my_data/testis_colo_pub_workflow/samples/*trimmed.fastq.gz;  
-do 
-samp=`basename ${fn}`;  echo "Processing sample ${samp}";   
-salmon quant -i my_data/genome_transc_human/ncRNA_Central_piRNAB_hg38_index -l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 6 --validateMappings --writeMappings=my_data/testis_colo_pub_workflow/quants/${samp}.sam -o my_data/testis_colo_pub_workflow/quants/${samp}_quant;
+for fn in "${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz;  
+do  samp=`basename ${fn}`;   
+regex="${samp%%.trimmed.fastq.gz}";  
+echo "Processing sample ${samp} start: $(date)";   
+salmon quant -i my_data/human_data/GRCh38_v34_spike_ins_salmon/GRCh38_v34_spike_ins_index  \
+-l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 6 --validateMappings \
+--writeMappings="${ANALYSIS_FOLDER}/quants/${regex}.sam" \
+-o "${ANALYSIS_FOLDER}/quants/${regex}_quant"; 
+echo "end:$(date)";
 done
 
 #save as bam files
-for file in my_data/smallRNA-breast-cancer/GSE68246/quants/*.sam;
+for file in "${ANALYSIS_FOLDER}"/quants/*.sam;
 do 
 regex="${file%%.sam}";
 echo samtools view -O bam -o ${regex}.bam -@ 6 ${file};
