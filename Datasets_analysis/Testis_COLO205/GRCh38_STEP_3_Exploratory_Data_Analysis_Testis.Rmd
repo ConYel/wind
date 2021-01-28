@@ -1,6 +1,6 @@
 ---
 title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
-subtitle: "Computational workflow for Data Exploration resulted from smallRNA-seq of testis samples"
+subtitle: "Computational workflow for Data Exploration resulted from smallRNA-seq of testis and COLO205 samples"
 author: "Constantinos Yeles (Konstantinos Geles)"
 date: "`r format(Sys.time(), '%a %b %d %Y')`"
 output:
@@ -32,6 +32,7 @@ suppressPackageStartupMessages({
   library('rafalib')
   library('pheatmap')
   library('RColorBrewer')
+  library('jsonlite')
 })
 ```
 ## 2. Directory generation for the resulted files
@@ -45,14 +46,152 @@ todate <- format(Sys.time(), "%d_%b_%Y")
 ### ii. Make the directory for the results of the exploratory data analysis
 
 ```{r make dirs}
-my_basename <- "../testis_colo_pub_workflow" ## INPUT name of the folder
-my_exp <- "Making_of_ping_pong_plot" ## INPUT name of the analysis
-genome_input <- "hg38" ## INPUT genome version here
-#my_exp_sal <- "salmon"
-#my_exp_fc <- "featureCounts"
-dat_path <- str_glue("{my_basename}/{my_exp}_{genome_input}_{todate}")
-dir.create(dat_path, recursive = TRUE)
+my_basename <- file.path("Datasets_analysis", "Testis_COLO205") ## INPUT name of the main folder 
+my_exp <- "spike_ins_COLO205_Testis" ## INPUT name of the analysis
+genome_input <- "GRCh38" ## INPUT genome version here
+my_tools <- c("salmon","featureCounts")
+dat_path <- file.path(my_basename, str_glue("EDA_{my_exp}_{genome_input}_{todate}"),
+                      my_tools)
+dat_path %>% map(~dir.create(., recursive = TRUE))
 ```
+## 3. Make or import the targets file.
+
+If you have used the [fastq-dl](https://github.com/rpetit3/fastq-dl) tool to download the samples from the European Nucleotide Archive then in the folder you have downloaded should be also json file(s) that can be imported.
+Otherwise you have to make them from scratch.
+The targets file has to have at least three columns with the column names: "sample_name","group","batch"
+
+```{r targets file}
+## import the json files in a list and collapse them
+targets_file <- file.path(my_basename,"downloaded_samples") %>% 
+  list.files( pattern = ".json", recursive = TRUE, full.names = TRUE) %>% 
+  map(~jsonlite::fromJSON(.)) %>% 
+  bind_rows() %>% 
+  as_tibble() %>% 
+  select(read_count, run_accession, #select only the columns with basic info
+         sample_title, study_accession) %>% 
+  mutate(group = sample_title %>% str_remove("_[:digit:]$"), 
+         group = group %>% str_remove("_[ABC]_NT$"),
+         batch = sample_title %>% str_remove(".+(?=[:digit:]$)"),
+         read_count = as.integer(read_count),
+         across(.cols = where(is.character), as_factor)) %>% 
+  dplyr::rename(sample_name = sample_title)
+
+targets_file$group %>% levels()
+```
+## 4. Import the salmon files
+
+```{r import salmon}
+# load salmon files----
+files_salm <- list.files(path = my_basename, pattern = ".sf",
+  recursive = TRUE, full.names = TRUE)
+
+names(files_salm) <- files_salm %>% 
+  str_remove(".quant.sf") %>% 
+  basename() %>% 
+  str_remove("_quant")
+
+# tximport-------
+txi <- tximport::tximport(files_salm, type = "salmon",
+  txOut = TRUE, countsFromAbundance = "lengthScaledTPM")
+```
+## 5. Make a DGElist object for salmon
+
+```{r DGElist salmon}
+# DGElist
+# from https://bioconductor.org/packages/release/bioc/vignettes/tximport/inst/doc/tximport.html
+# we follow the instructions to import for edgeR 
+cts <- txi$counts
+normMat <- txi$length
+
+# Obtaining per-observation scaling factors for length, adjusted to avoid
+# changing the magnitude of the counts
+normMat <- normMat/exp(rowMeans(log(normMat)))
+normCts <- cts/normMat
+
+# Computing effective library sizes from scaled counts, to account for
+# composition biases between samples
+eff.lib <- calcNormFactors(normCts) * colSums(normCts)
+
+# Combining effective library sizes with the length factors, and calculating
+# offsets for a log-link GLM
+normMat <- sweep(normMat, 2, eff.lib, "*")
+normMat <- log(normMat)
+
+# Creating a DGEList object for use in edgeR.
+dgl_salmon <- DGEList(cts, samples = targets_file) %>% 
+  scaleOffset( normMat) %>% 
+  write_rds(file.path(dat_path[1],"dgl_edgeR_salmon.rds"))
+# remove objects.
+rm(cts, normCts, normMat, txi)
+```
+## 6. Import the featureCounts object and make a DGElist object
+
+```{r DGElist FeatureCounts}
+# load the rds from featureCOunts----
+# INPUT rds featureCOunts
+fc <- list.files(path = my_basename, recursive = TRUE, 
+  pattern = ".+counts.+.rds", 
+  full.names = TRUE) %>% 
+  read_rds()
+
+# write the matrix for the analysis, annotation stats-----
+colnames(fc$counts) <- targets_file$run_accession
+
+fc$counts %>% 
+  as_tibble(rownames = "sRNA") %>% 
+  write_tsv(file.path(dat_path[2],"raw_reads_fc.txt"))
+
+fc$annotation %>% 
+  as_tibble() %>% 
+  write_tsv(file.path(dat_path[2],"annotation_fc.txt"))
+
+fc$stat %>% 
+  as_tibble() %>% 
+  write_tsv(file.path(dat_path[2],"stats_fc.txt"))
+
+dgl_fc <- DGEList(counts = fc$counts,
+               samples = targets_file,
+               lib.size = colSums(fc$counts),
+               norm.factors = rep(1,ncol(fc$counts)))
+
+# give colours to samples ----
+pal1 <- tibble(value = c('#e41a1c','#377eb8',
+                         '#4daf4a','#984ea3',
+                         '#ff7f00','#ffff33',
+                         '#a65628','#f781bf')) %>%
+  dplyr::slice(1:length(levels(as_factor(targets_file$group)))) %>%
+  mutate(
+    group = as_factor(levels(as_factor(targets_file$group))))
+
+dgl_fc$colours <- as_factor(inner_join(dgl_fc$samples, pal1,by= "group")$value)
+
+# remove objects ----
+rm(pal1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## 3. Import the expr values
 ### i. 
 ```{r}
