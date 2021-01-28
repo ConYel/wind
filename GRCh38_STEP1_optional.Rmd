@@ -485,3 +485,32 @@ rnacentral_ids <- data.table::fread("../genome_transc_human/id_mapping.tsv.gz",
   write_tsv("../genome_transc_human/rnacentral_ids_hg38.txt")
 
 ```
+## Venn diagram
+common expressed piRNA between testis samples and COLO205
+```{r}
+library(VennDiagram)
+
+salmon_FC_groups <- read_tsv("../testis_colo_pub_workflow/ExpDatAnalysis_testis_colo205_hg38_22_Oct_2020/salmon_FC_cpm_union_grouped.txt")
+
+salmon_FC_groups %>% 
+  filter(gene_type == "piRNA") %>% 
+  filter(Testis_pool_salmon > 0 | Testis_pool_fc > 0) 
+
+salmon_FC_groups %>% 
+     filter(gene_type == "piRNA") %>% 
+     filter(COLO205_salmon > 0 | COLO205_fc > 0)
+
+salmon_FC_groups %>% 
+     filter(gene_type == "piRNA") %>% 
+     filter(COLO205_salmon > 0 | COLO205_fc > 0,
+            Testis_pool_salmon > 0 | Testis_pool_fc > 0)
+  
+
+grid.newpage()                                        # Move to new plotting page
+draw.pairwise.venn(area1 = 6982,                          # Add name to each set
+                 area2 = 240,
+                 cross.area = 234,
+                 category = c("testis", "COLO205"),
+                 fill = c("red", "blue"),
+                 lty = "blank")
+```
