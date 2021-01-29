@@ -817,20 +817,19 @@ spikes_Fasta %>%
   Biostrings::writeXStringSet(file.path("human_data","spike_ins.fasta"))
 ```
 ### ii. fcat bash use, make the fasta genome transcriptome
-we will use fcat to make to fasta file, one of the genome and spike-ins and one of
+we will use fcat to make the fasta files, one of the genome and spike-ins and one of
 the transcriptome and the spike-ins. Both files will be used to generate the
 indexes of salmon and STAR
 
 ```{bash fcat}
 # for now it works on linux only 
 # cargo install fcat
-cargo install fcat
 
 # transriptome fasta
-fcat my_data/human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.fa my_data/human_data/spike_ins.fasta > my_data/human_data/transcriptome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta
+fcat my_data/human_data/spike_ins.fasta my_data/human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.fa  > my_data/human_data/transcriptome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta
 
 # genome fasta
-fcat my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa my_data/human_data/spike_ins.fasta > my_data/human_data/genome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta
+fcat my_data/human_data/spike_ins.fasta my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa > my_data/human_data/genome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta
 ```
 ### iii. make a txt file for future use about the generation of histograms
 
@@ -880,10 +879,10 @@ mkdir  my_data/human_data/GRCh38_v34_salmon
 exit
 # run the docker
 docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
-# create the index
+# create the index with spike-ins
 ## 
 salmon index -t my_data/human_data/gentrome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta.gz  \
--d my_data/human_data/decoys_spike_ins.txt \
+-d my_data/human_data/decoys_GRCh38.txt \
 -i my_data/human_data/GRCh38_v34_spike_ins_salmon/GRCh38_v34_spike_ins_index \
 -k 15 -p 8
 

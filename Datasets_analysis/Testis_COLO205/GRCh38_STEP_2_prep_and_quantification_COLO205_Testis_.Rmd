@@ -90,7 +90,7 @@ done
 
 exit
 ```
-### i. Transcript abundances with __[Salmon](https://github.com/COMBINE-lab/salmon)__
+### ii. Transcript abundances with __[Salmon](https://github.com/COMBINE-lab/salmon)__
 
 We will use a public docker image to run salmon
 
