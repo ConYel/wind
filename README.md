@@ -13,4 +13,4 @@ The workflow consists of three significant steps:
 
 Logo | workflow
 --- | ---
-<img src="WIND_LOGO.png" width="1000"> | <img src="Figure_workflow.jpg" width="600">  
+<img src="WIND_LOGO.png" width="800"> | <img src="Figure_workflow.jpg" width="600">  
