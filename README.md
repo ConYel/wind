@@ -1,8 +1,3 @@
----
-output:
-  pdf_document: default
-  html_document: default
----
 # wind: wORKFLOW FOR PiRNAs AnD BEYONd
 
 <a href="https://doi.org/10.5281/zenodo.4289909"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4289909.svg" alt="DOI"></a>
@@ -18,4 +13,4 @@ The workflow consists of three significant steps:
 
 Logo | workflow
 --- | ---
-![](./WIND_LOGO.png){height=400px width=400px} | ![](./Figure_workflow.jpg){height=700px width=400px}
+<img src="WIND_LOGO.png" width="1000"> | <img src="Figure_workflow.jpg" width="600">  
