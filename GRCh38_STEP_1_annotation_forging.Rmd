@@ -188,6 +188,10 @@ exit
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
 ```
+
+In order to minimize issues with the paths of  folders and files
+we use wherever possible the package [here](https://github.com/jennybc/here_here#readme)
+
 ### i. Load libraries
 
 ```{r load the libraries II}
@@ -196,12 +200,14 @@ suppressPackageStartupMessages({
   library('data.table')
   library('plyranges')
   library("BSgenome.Hsapiens.UCSC.hg38")
+  library("here")
 })
 ```
 ### ii. RNAcentral. import RNAcentral file 
 
 ```{r import RNAcentral}
-sRNA <- read_bed("human_data/RNACentral/homo_sapiens.GRCh38.bed.gz") %>% 
+sRNA <- here("human_data", "RNACentral", "homo_sapiens.GRCh38.bed.gz") %>% 
+  read_bed() %>% 
   select("sRNA_id" = name, "gene_type" = NA.1, "source" = NA.2) %>% 
   mutate(type = "exon")
 
@@ -209,6 +215,21 @@ sInfo <- Seqinfo(genome="hg38")
 seqlevels(sInfo) <- seqlevels(sRNA)
 seqinfo(sRNA) <- sInfo
 ```
+#### Exploring the lengths of the RNAcentral sequences
+
+```{r summaries of length RNAcentral seq}
+sRNA %>% 
+  as_tibble() %>% 
+  group_by(gene_type, sRNA_id) %>% 
+  summarise(count_less = sum(width < 100), count_more = sum(width >= 100)) %>%
+  group_by(gene_type) %>% 
+  summarise(longer_or_equal_than_100_seqs = sum(count_more>0), 
+            shorter_than_100_seqs= sum(count_less>0),
+            longer_or_equal_than_100_GRs = sum(count_more), 
+            shorter_than_100_GRs= sum(count_less))
+```
+
+
 ### iii. RNAcentral. filtering for sequences smaller than 100 nucleotides
 
 ```{r filter 100bp}
