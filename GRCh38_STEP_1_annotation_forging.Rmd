@@ -223,13 +223,33 @@ sRNA %>%
   group_by(gene_type, sRNA_id) %>% 
   summarise(count_less = sum(width < 100), count_more = sum(width >= 100)) %>%
   group_by(gene_type) %>% 
-  summarise(longer_or_equal_than_100_seqs = sum(count_more>0), 
-            shorter_than_100_seqs= sum(count_less>0),
+  summarise(longer_or_equal_than_100_seqs = sum(count_more > 0), 
+            shorter_than_100_seqs = sum(count_less > 0),
             longer_or_equal_than_100_GRs = sum(count_more), 
-            shorter_than_100_GRs= sum(count_less))
+            shorter_than_100_GRs = sum(count_less)) %>% 
+  write_tsv(here("human_data", "RNACentral","Genome_ranges_Sequences_100_filter.txt"))
+
+# function for summarizing stats
+my_quantile <- function(x) {
+  tibble(
+    min = min(x),
+    q1 = quantile(x, 0.25), 
+    mean = mean(x),
+    median = median(x),
+    q3 = quantile(x, 0.75),
+    max = max(x),
+    sd = sd(x))
+}
+
+# length stats for each RNAcentral category
+sRNA %>% 
+  as_tibble() %>% 
+  group_by(gene_type) %>% 
+  summarise(my_quantile(width),
+            GRs_number = n(), 
+            Sequences = n_distinct(sRNA_id)) %>% 
+  write_tsv(here("human_data", "RNACentral","Genome_ranges_Sequences_100_filter_stats.txt"))
 ```
-
-
 ### iii. RNAcentral. filtering for sequences smaller than 100 nucleotides
 
 ```{r filter 100bp}
@@ -256,6 +276,25 @@ biotypes <- tr_sRNA %>%
   as_tibble() %>% 
   select(sRNA_id,gene_type) %>% 
   distinct(sRNA_id, .keep_all = T)
+```
+#### RNAcentral. keep the all sequences except piRNA for later use 
+
+```{r filter more than 100bp}
+tr_sRNA_long <- sRNA %>% 
+  filter(gene_type != "piRNA") %>% # remove piRNAs
+  as_tibble() %>% 
+  mutate(sRNA_id = str_remove(sRNA_id,"_9606")) %>% 
+  as_granges() %>% 
+  # keep info about the standard chromosomes
+  keepStandardChromosomes(pruning.mode = "coarse") %>% 
+  # remove the duplicated GR entries from RNAcentral
+  as_tibble() %>% 
+  unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
+  distinct(seq_s, .keep_all = TRUE) %>% # remove dupl GRs 
+  separate(col = seq_s,
+           into = c("seqnames","start","end","width","strand"),
+           sep = "_", convert = T) %>% 
+  as_granges()
 ```
 ### iv. RNAcentral. keep sequence information
 
@@ -298,7 +337,8 @@ transcripts_GR <- transcripts_GR %>%  # [153.043] GRs / [41,496] sRNA_id -> [43,
 ### v. piRNABank. import the piRNA sequences aligned to genome 
 
 ```{r import piRNABank}
-piRNAbank_hg38 <- Biostrings::readDNAStringSet("human_data/piRNABank/piBnk_GRCh38_v34_fin.fasta")
+piRNAbank_hg38 <- here("human_data", "piRNABank", "piBnk_GRCh38_v34_fin.fasta") %>% 
+  Biostrings::readDNAStringSet()
 
 piRNAbank_hg38_tib <- piRNAbank_hg38 %>% # 23,120 sequences
   as.character() %>% 
@@ -311,7 +351,8 @@ piRNAbank_hg38_tib <- piRNAbank_hg38 %>% # 23,120 sequences
 
 ```{r import piRNABank GRs}
 # piRNABank. import the Genomic Ranges and filter them -----
-  piRNAbank_hg38_ranges <- read_bed("human_data/piRNABank/piBnk_GRCh38_v34_fin.bed") %>% 
+  piRNAbank_hg38_ranges <- here("human_data", "piRNABank", "piBnk_GRCh38_v34_fin.bed") %>%
+  read_bed() %>% 
   as_tibble() %>% 
   arrange(desc(width)) %>% # [46,552] GRs / 23,120 sequences
   filter(width < 100) %>% #  [46,552] -> [46,503] GRs / 23,120
@@ -326,7 +367,7 @@ transcripts_pi_hg38 <- Views(BSgenome.Hsapiens.UCSC.hg38, piRNAbank_hg38_ranges)
 # we need to apply a second width filter at 69 
 # as we know that piRNAs are ~32 base pairs
 # but if we search the length of GRs there are some with
-# width => 69, 8 in particular
+# width >= 69, 8 in particular
 transcripts_pi_hg38 <- transcripts_pi_hg38 %>% filter(width < 69)  # [45,818] -> [45,810] GRs / 23,120 seq
 transcripts_pi_hg38 %>% count(name) %>% nrow #> 23120 piRNAs from piRNABANK
 
@@ -529,7 +570,7 @@ c_piBNK_RCent_GR <- c_piBNK_RCent %>%
 ```
 ### ix.  Reclassifying to miscellaneous piRNA
 
-Studies of Tosar et. al[1](https://pubmed.ncbi.nlm.nih.gov/33376191/) [2](https://pubmed.ncbi.nlm.nih.gov/30271890/) have demonstrated that some piRNAs
+Studies from Tosar et. al[1](https://pubmed.ncbi.nlm.nih.gov/33376191/) [2](https://pubmed.ncbi.nlm.nih.gov/30271890/) have demonstrated that some piRNAs
 sequences can been found inside other small non-coding RNAs or genes.
 These "piRNA" most probably are mRNA or ncRNA fragments that have been misstyped 
 as such.
@@ -545,7 +586,8 @@ We will use a cut-off of at least 1 base of overlap with the piRNA sequence
 We filter the GRs that are found inside protein coding of CDS and exon tags
 
 ```{r filtering proteing coding GRs}
-gene_annot <- read_gff2("human_data/GRCh38/gencode.v34.primary_assembly.annotation.gtf.gz")
+gene_annot <- here("human_data","GRCh38","gencode.v34.primary_assembly.annotation.gtf.gz") %>% 
+  read_gff2()
 
 # how many GRs for each type are in the gencode annotation:
 gene_annot %>% 
@@ -609,26 +651,27 @@ misc_piRNAs_GR_filt <- c_piBNK_RCent_GR_filtered %>%
   select(seq_piBNK, gene_name, gene_id, transcript_id, gene_type_genes,tag) %>% 
   unite(col = "GENCODE_annot", gene_name:tag, sep = "_GNC_")
 ```
-Following this strategy we will also find the GRs of piRNAs that are inside 
-the data we have from RNAcentral.
+Following this strategy we will also find the GRs of piRNAs that are overlapping
+with small RNAs from RNAcentral.
 
 ```{r miscellaneous piRNA RNAcentral}
+#----------------------------------------------------------
 # remove the GRs of piRNAs
-RCent_GRs_nopiRNA <- c_piBNK_RCent_GR_filtered %>% 
-  filter(gene_type != "piRNA") #15.947 GRs of other smallRNAs
-
+#RCent_GRs_nopiRNA <- c_piBNK_RCent_GR_filtered %>% 
+#  filter(gene_type != "piRNA") #15.947 GRs of other smallRNAs
+#------------------------------------------------------------
 # make a dataframe with the overlapping GRs of piRNAs
 misc_piRNAs_GR_RCent_filt <- c_piBNK_RCent_GR_filtered %>% 
   filter(gene_type == "piRNA") %>% 
-  find_overlaps_directed(RCent_GRs_nopiRNA,
+  find_overlaps_directed(tr_sRNA_long,
                          maxgap = -1L, 
                          minoverlap = 1L, 
                          suffix = c("_piRNA", "_Rcentral")) %>% 
   as_tibble() %>%
   unite(col = "seq_piBNK", seqnames:strand, sep = "_") %>%
   distinct(seq_piBNK, .keep_all = TRUE) %>% 
-  select(seq_piBNK, seq_id_Rcentral, gene_type_Rcentral) %>% 
-  unite(col = "RNACent_annot", seq_id_Rcentral:gene_type_Rcentral, 
+  select(seq_piBNK, sRNA_id_Rcentral, gene_type_Rcentral) %>% 
+  unite(col = "RNACent_annot", sRNA_id_Rcentral:gene_type_Rcentral, 
         sep = "_geneType_")
 ```
 
@@ -717,6 +760,10 @@ complete_piBnk_RCent %>%
   filter(gene_type == "misc_piRNA") %>% 
   count(RNACent_annot, GENCODE_annot, sort = TRUE)
 
+complete_piBnk_RCent %>% 
+  filter(gene_type == "piRNA") %>% 
+  count(RNACent_annot, GENCODE_annot, sort = TRUE)
+
 # check if there are any misscategorized gene_type sequences
 complete_piBnk_RCent %>% 
   filter(!gene_type %in% c("amb_piRNA", "misc_piRNA")) %>% 
@@ -726,7 +773,8 @@ complete_piBnk_RCent %>%
 complete_piBnk_RCent <- complete_piBnk_RCent %>%
   separate(col = seq_piBNK,
            into = c("seqnames", "start","end","width","strand"), 
-           sep = "_", convert = TRUE) %>% 
+           sep = "_", 
+           convert = TRUE) %>% 
   as_granges()
 ```
 
@@ -760,7 +808,7 @@ piRNAbank_rCentral_fasta <- piRNAbank_rCentral_fasta[!duplicated(piRNAbank_rCent
 
 ```{r export and save res}
 piRNAbank_rCentral_fasta %>% 
-  Biostrings::writeXStringSet("human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.fa")
+  Biostrings::writeXStringSet(here("human_data","strigent_sncRNA_piRNBnk_RNACent_GRCh38_v34.fa"))
 
 gtf_piB_RCentr <- complete_piBnk_RCent %>% 
   as_tibble() %>% 
@@ -772,7 +820,7 @@ seqlevels(sInfo) <- seqlevels(gtf_piB_RCentr)
 seqinfo(gtf_piB_RCentr)<- sInfo
 
 gtf_piB_RCentr %>% 
-  write_gff2("human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf")
+  write_gff2(here("human_data","strigent_sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf"))
 
 # to import use:
 # fasta_tr_hg38 <- Biostrings::readDNAStringSet("human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.fa")
