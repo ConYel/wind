@@ -627,95 +627,16 @@ complete_piBnk_RCent <- c_piBNK_RCent_GR_filtered %>%
   mutate(across(.cols = GENCODE_annot,
                  .fns = ~if_else(is.na(.x),"no_overlap",.x))
            ) %>% 
-  select(seq_piBNK, seq_id, GENCODE_annot, everything())
-```
-Unfortunately, some of the piRNAs which were recategorized
-as misc_piRNA have Genomic Ranges that are not overlapping with 
-any other genomic features. 
-This implies that we have to consider how to categorize them
-as they will have some GRs inside various genomic features
-(smallRNAs, pseudogenes, etc) and other GRs in "unique" regions.
-
-```{r  amb_piRNAs and piRNAs}
-# finding the "ambiguous" piRNAs
-ambiguous_piRNAs <- complete_piBnk_RCent %>% 
-  count(seq_id, gene_type, sort = T) %>% 
-  filter(duplicated(seq_id))# 1.057 ambiguous piRNA sequences from 27.970 
-
-# calculating the ratio of misc_piRNA to piRNA GRs and summarizing
-complete_piBnk_RCent %>% 
-  filter(seq_id %in% ambiguous_piRNAs$seq_id) %>% # 60.829 GRs, 2.693 are misc_piRNA
-  group_by(seq_id) %>% 
-  count(gene_type) %>% 
-  summarise(
-    ratio = log(n[gene_type == "misc_piRNA"]/n[gene_type == "piRNA"])) %>% 
-  summary()
-
-# calculating which gene_type are the "ambiguous" piRNAs are inside
-explor_ambiguous_piRNAs <- complete_piBnk_RCent %>% 
-  filter(seq_id %in% ambiguous_piRNAs$seq_id) %>% 
-  separate(GENCODE_annot, 
-           into = c("gene_name", "gene_id", "transcript_id", "gene_type_GENC", "tag"), 
-           sep = "_GNC_") %>% 
-  separate(RNACent_annot,
-           into = c("seq_id_Rcentral", "gene_type_Rcentral"),
-           sep = "_geneType_")
-
-# search ambiguous_piRNAs gene_types in GENCODE 
-explor_ambiguous_piRNAs %>% 
-  filter(!is.na(gene_type_GENC)) %>% 
-  count(gene_type_GENC, sort = TRUE) 
-
-# search ambiguous_piRNAs gene_types in RNACENTRAL 
-explor_ambiguous_piRNAs %>% 
-  filter(!is.na(gene_type_Rcentral)) %>% 
-  count(gene_type_Rcentral,gene_type_GENC, sort = TRUE)
-```
-For the above issues of ambiguity regarding piRNAs we will make one more 
-category of genomic features with the name of:
-ambiguous piRNA or "amb_piRNA".
-
-```{r amb_piRNAs in gtf}
-complete_piBnk_RCent <- complete_piBnk_RCent %>% 
-  mutate(gene_type = 
-           case_when(
-             seq_id %in% ambiguous_piRNAs$seq_id ~ "amb_piRNA",
-             TRUE ~ gene_type
-           ))
-
-complete_piBnk_RCent %>% 
-  filter(gene_type == "amb_piRNA") %>% 
-  count(RNACent_annot, GENCODE_annot, sort = TRUE)
-
-complete_piBnk_RCent %>% 
-  filter(gene_type == "misc_piRNA") %>% 
-  count(RNACent_annot, GENCODE_annot, sort = TRUE)
-
-# check if there are any misscategorized gene_type sequences
-complete_piBnk_RCent %>% 
-  filter(!gene_type %in% c("amb_piRNA", "misc_piRNA")) %>% 
-  count(gene_type, RNACent_annot, GENCODE_annot, sort = TRUE)
-
-# replace object as GRanges
-complete_piBnk_RCent <- complete_piBnk_RCent %>%
+  select(seq_piBNK, seq_id, GENCODE_annot, everything()) %>% 
   separate(col = seq_piBNK,
            into = c("seqnames", "start","end","width","strand"), 
            sep = "_", convert = TRUE) %>% 
   as_granges()
 ```
+Last check for the sequences of all smallRNAs
 
-
-```{r  misc_piRNAs and piRNAs}
-# possible "clusters" of piRNA -----
- complete_piBnk_RCent %>% 
-  filter(gene_type == "piRNA") %>% 
-  plyranges::reduce_ranges_directed() %>% 
-  as_tibble() %>% 
-  filter(width > 100) %>% 
-  arrange(desc(width)) %>% 
-  count(width, sort = T) 
-  
-# testing of sequences-----
+```{r  objects to export}
+# test the sequences-----
 piRNAbank_rCentral_seqs <- Views(BSgenome.Hsapiens.UCSC.hg38, complete_piBnk_RCent)
 
 piRNAbank_rCentral_seqs %>%
@@ -747,10 +668,6 @@ seqinfo(gtf_piB_RCentr)<- sInfo
 
 gtf_piB_RCentr %>% 
   write_gff2("human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf")
-
-# to import use:
-# fasta_tr_hg38 <- Biostrings::readDNAStringSet("human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.fa")
-# gtf_piB_RCentr <- read_gff2("human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf")
 ```
 
 Until now, we have prepared the files for annotation and quantification (GTF, FASTA) 
@@ -772,11 +689,11 @@ data_sets %>%
 
 ```{r adding spikes-ins in genome and gtf}
 #make the folder in which we will put the indexes
-index_folders <- file.path("human_data","GRCh38_v34_spike_ins") %>% 
-  str_c(c("_STAR","_salmon")) 
+index_folders <- file.path("human_data","indexes",c("GRCh38_v34_spike_ins", "GRCh38_v34_public")) %>% 
+  str_c(rep(c("_STAR","_salmon"),each=2)) 
 
 index_folders %>% 
-  map(~dir.create(.))
+  map(~dir.create(., recursive = TRUE))
 
 # load the spike in sequences and make it as Genomic ranges
 spike_ins <- read_tsv("spike-ins.txt", col_names = c("names", "seq_RNA")) %>% 
@@ -843,19 +760,12 @@ piB_RCentr_spike_ins %>%
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 
 # make the STAR index
-STAR --runMode genomeGenerate --genomeDir \
-my_data/human_data/GRCh38_v34_spike_ins_STAR/spike_GRCh38_v34 \
---genomeFastaFiles my_data/human_data/genome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta \
---runThreadN 10 \
-&& cp Log.out my_data/human_data/GRCh38_v34_spike_ins_STAR/Log.out
+STAR --runMode genomeGenerate \
+--genomeDir my_data/human_data/indexes/GRCh38_v34_spike_ins_STAR \
+--genomeFastaFiles my_data/human_data/genome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta --runThreadN 8 && cp Log.out my_data/human_data/indexes/GRCh38_v34_spike_ins_STAR/Log.out 
 
 # following the instructions for salmon decoy aware indexing
 # https://combine-lab.github.io/alevin-tutorial/2019/selective-alignment/
-grep "^>" my_data/human_data/genome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta |cut -d " " -f 1 > my_data/human_data/decoys_spike_ins.txt
-
-sed -i.bak -e 's/>//g' my_data/human_data/decoys_spike_ins.txt
-
-# the same without the spike-ins
 grep "^>" my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa |cut -d " " -f 1 > my_data/human_data/decoys_GRCh38.txt
 
 sed -i.bak -e 's/>//g' my_data/human_data/decoys_GRCh38.txt
