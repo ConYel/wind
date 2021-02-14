@@ -102,13 +102,13 @@ ANALYSIS_FOLDER="my_data/Datasets_analysis/Testis_COLO205"
 
 # run the samples
 
-for fn in "${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz;  
+for fn in "${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz;   
 do  samp=`basename ${fn}`;   
-regex="${samp%%.trimmed.fastq.gz}";  
+regex="${samp%%.trimmed.fastq.gz}";   
 echo "Processing sample ${samp} start: $(date)";   
-salmon quant -i my_data/human_data/GRCh38_v34_spike_ins_salmon/GRCh38_v34_spike_ins_index  \
--l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 6 --validateMappings \
---writeMappings="${ANALYSIS_FOLDER}/quants/${regex}.sam" \
+salmon quant -i my_data/human_data/indexes/GRCh38_v34_spike_ins_salmon  \
+-l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 12 
+--validateMappings --writeMappings="${ANALYSIS_FOLDER}/quants/${regex}.sam" \
 -o "${ANALYSIS_FOLDER}/quants/${regex}_quant"; 
 echo "end:$(date)";
 done

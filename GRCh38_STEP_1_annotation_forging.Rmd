@@ -788,11 +788,13 @@ docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
 ## 
 salmon index -t my_data/human_data/gentrome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta.gz  \
 -d my_data/human_data/decoys_GRCh38.txt \
--i my_data/human_data/GRCh38_v34_spike_ins_salmon/GRCh38_v34_spike_ins_index \
--k 15 -p 8
+-imy_data/human_data/indexes/GRCh38_v34_spike_ins_salmon \
+-k 15 -p 14
 
 # the same without the spike-ins
-salmon index -t my_data/human_data/gentrome_sncRNA_piRNBnk_RNACent_GRCh38_v34.fasta.gz -d my_data/human_data/decoys_GRCh38.txt -i my_data/human_data/GRCh38_v34GRCh38_v34_spike_ins_index -k 15 -p 10
+salmon index -t my_data/human_data/gentrome_sncRNA_piRNBnk_RNACent_GRCh38_v34.fasta.gz \
+-d my_data/human_data/decoys_GRCh38.txt \
+-i my_data/human_data/indexes/GRCh38_v34_public_salmon -k 15 -p 14
 
 exit
 ```
