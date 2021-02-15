@@ -692,6 +692,112 @@ groups %>% map2(list(FC_groups),
 dev.off()
 ```
 
+## 18. plots and tables regarding piRNAs and spike-ins
+### i. Use two different datasets (1 testis, 1 COLO205)
+```{r Dataset COLO205 FC, salmon}
+# Featurecounts ----------------------------------------------------------------
+# divide the primary dataset
+dgl_COLO_fc <- DGEList(counts = fc$counts[, str_detect(colnames(fc$counts), "COLO")],
+               samples =  targets_file %>% filter(str_detect(cells, "COLO")))
+
+group_COLO_fc <- filter(targets_file, str_detect(cells, "COLO"))$group %>% droplevels()
+#design matrix
+design_COLO <- model.matrix(~0 + group_COLO_fc)
+
+colnames(design_COLO) <- colnames(design_COLO) %>% 
+  str_remove("..+_fc") 
+
+rownames(design_COLO) <- filter(targets_file,str_detect(cells, "COLO"))$sample_name
+#filtering
+keep.exprs_COLO <- filterByExpr.DGEList(dgl_COLO_fc, design = design_COLO)
+dgl_COLO_fc_filt <- dgl_COLO_fc[keep.exprs_COLO,,keep.lib.sizes=FALSE]
+
+#normalization
+cpm_COLO_fc_norm <- dgl_COLO_fc_filt %>% 
+  cpm(normalized.lib.sizes = TRUE,
+      log = FALSE,
+      prior.count = 2) %>% 
+  as_tibble(rownames = "sncRNA") 
+
+# Salmon -----------------------------------------------------------------------
+# import only the COLO files
+files_salm_COLO <- files_salm[names(files_salm) %in% as.character(dgl_COLO_fc_filt$samples$run_accession)]
+
+# tximport
+txi <- tximport::tximport(files_salm_COLO, type = "salmon",
+  txOut = TRUE, countsFromAbundance = "lengthScaledTPM")
+# DGElist
+# from https://bioconductor.org/packages/release/bioc/vignettes/tximport/inst/doc/tximport.html
+# we follow the instructions to import for edgeR 
+cts <- txi$counts
+normMat <- txi$length
+
+# change the colnames of the salmon objects
+identical(as.character(dgl_COLO_fc_filt$samples$run_accession),colnames(cts))
+colnames(cts) <- dgl_COLO_fc_filt$samples$sample_name
+colnames(normMat) <- dgl_COLO_fc_filt$samples$sample_name
+
+# Obtaining per-observation scaling factors for length, adjusted to avoid
+# changing the magnitude of the counts
+normMat <- normMat/exp(rowMeans(log(normMat)))
+normCts <- cts/normMat
+
+# Computing effective library sizes from scaled counts, to account for
+# composition biases between samples
+eff.lib <- calcNormFactors(normCts) * colSums(normCts)
+
+# Combining effective library sizes with the length factors, and calculating
+# offsets for a log-link GLM
+normMat <- sweep(normMat, 2, eff.lib, "*")
+normMat <- log(normMat)
+
+# Creating a DGEList object for use in edgeR.
+dgl_salmon_COLO <- DGEList(cts, 
+                           samples = targets_file %>% filter(str_detect(cells, "COLO"))) %>% 
+  scaleOffset(normMat) 
+# remove objects.
+rm(cts, normCts, normMat, txi)
+
+keep.exprs_COLO_sal <- filterByExpr.DGEList(dgl_salmon_COLO, design = design_COLO)
+dgl_salmon_COLO_filt <- dgl_salmon_COLO[keep.exprs_COLO_sal,,keep.lib.sizes=FALSE]
+
+#normalization
+cpm_salmon_COLO_norm <- dgl_salmon_COLO_filt %>% 
+  cpm(normalized.lib.sizes = TRUE,
+      log = FALSE,
+      prior.count = 2) %>% 
+  as_tibble(rownames = "sncRNA") 
+
+# join the two methods ---------------------------------------------------------
+CPM_COLO_fc_salmon <- bind_rows("FeatureCounts" = cpm_COLO_fc_norm,
+                                "salmon" = cpm_salmon_COLO_norm,
+                                .id = "method") %>% 
+   left_join(complete_biotypes_seqs) # found in 15. paragraph
+
+```
+### ii. Plot the cpm of spike-ins in COLO205 before and after treatment
+
+```{r plot of colo205 spike ins}
+COLO205_plot <- CPM_COLO_fc_salmon %>%
+  select(-c(source:sRNA_id2)) %>% 
+  filter(str_detect(sncRNA,"SS_")) %>% 
+  pivot_longer(cols = -c(method, sncRNA)) %>% 
+  ggplot(mapping = aes(x = sncRNA, y= value, fill = method)) +
+  geom_bar(stat = "identity", position=position_dodge(), width=0.2) +
+  scale_x_discrete(name = "piRNA-like ~ spike-ins", guide = guide_axis(angle = 45)) + 
+  scale_y_continuous(name = "Counts per million", labels = scales::comma, breaks = scales::pretty_breaks(n = 10)) +
+  theme_bw() +
+  scale_fill_manual(values=c('#999999','#E69F00')) +
+  facet_wrap(~ name, ncol = 3) 
+
+magn_COLO_plot <-COLO205_plot + coord_cartesian(ylim = c(0, 3000)) 
+
+
+pdf(file.path(dirname(dat_path[1]), "spike_ins_COLO205_treat_FC_salmon.pdf"))
+COLO205_plot
+magn_COLO_plot
+dev.off()
+```
 
 
 
