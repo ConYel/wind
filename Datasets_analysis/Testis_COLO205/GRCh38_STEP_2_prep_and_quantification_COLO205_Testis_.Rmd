@@ -78,7 +78,7 @@ do
 samp=`basename ${file}`; 
 regex="${samp%%.trimmed.fastq.gz}"; 
 echo "Processing sample ${samp} start: $(date)"; 
-STAR --genomeDir my_data/human_data/indexes/GRCh38_v34_spike_ins_STAR/spike_GRCh38_v34 \
+STAR --genomeDir my_data/human_data/indexes/GRCh38_v34_spike_ins_STAR \
 --genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat \
 --runThreadN 12 --alignIntronMax 1 --outSAMattributes NH HI NM MD \
 --outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate \
@@ -128,8 +128,8 @@ rm ${ANALYSIS_FOLDER}/quants/*.sam
 exit
 ```
 
-Next, we run a docker image which includes varius R packages that
-will be used futhermore in the downstream analysis following featurecounts
+Next, we run a docker image which includes various R packages that
+will be used in the downstream analysis following featurecounts
 for the exploratory data analysis of piRNA data
 
 ### R docker
