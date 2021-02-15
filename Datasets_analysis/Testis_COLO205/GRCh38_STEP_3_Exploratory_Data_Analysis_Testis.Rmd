@@ -62,6 +62,7 @@ The targets file has to have at least three columns with the column names: "samp
 
 ```{r targets file}
 ## import the json files in a list and collapse them
+## here we change also the batch levels as the samples are from two different cell lines / tissues
 targets_file <- file.path(my_basename,"downloaded_samples") %>% 
   list.files( pattern = ".json", recursive = TRUE, full.names = TRUE) %>% 
   map(~jsonlite::fromJSON(.)) %>% 
@@ -70,8 +71,17 @@ targets_file <- file.path(my_basename,"downloaded_samples") %>%
   select(read_count, run_accession, #select only the columns with basic info
          sample_title, study_accession) %>% 
   mutate(group = sample_title %>% str_remove("_[:digit:]$"), 
-         group = group %>% str_remove("_[ABC]_NT$"),
-         batch = sample_title %>% str_remove(".+(?=[:digit:]$)"),
+         group = group %>% str_remove("_NT$"),
+         cells = case_when(
+           str_detect(group, "COLO205") ~ "COLO205",
+           str_detect(group, "Testis|testis") ~ "Testis"
+         ),
+         batch = sample_title %>% str_remove(".+(?=[:digit:]$)") %>% as.numeric(),
+         batch = case_when(
+           str_detect(cells, "Testis|testis") ~ batch +4,
+           TRUE ~ batch
+         ),
+         batch = as_factor(batch),
          read_count = as.integer(read_count),
          
          across(.cols = where(is.character), as_factor)) %>% 
@@ -147,9 +157,9 @@ rm(cts, normCts, normMat, txi)
 ```{r DGElist FeatureCounts}
 # load the rds from featureCounts----
 # INPUT rds featureCOunts
-fc <- list.files(path = my_basename, recursive = TRUE, 
-  pattern = ".+counts.+.rds", 
-  full.names = TRUE) %>% 
+fc <- list.files(path = my_basename,
+                 pattern = ".+counts.+.rds", 
+                 full.names = TRUE) %>% 
   read_rds()
 
 # keep only the samples treated and not treated replicates-----
@@ -224,10 +234,11 @@ design <- model.matrix(~0 + targets_file$group)
 colnames(design) <- colnames(design) %>% 
   str_remove("targets_file\\$group") 
 rownames(design) <- targets_file$sample_name
-design_2 <- model.matrix(~0 + targets_file$group + targets_file$batch)
+design_2 <- model.matrix(~0 + targets_file$group + targets_file$cells + targets_file$batch)
 colnames(design_2) <- colnames(design_2) %>% 
   str_remove("targets_file\\$group") %>% 
-  str_remove("targets_file\\$batch")
+  str_remove("targets_file\\$batch") %>% 
+  str_remove("targets_file\\$cells")
 rownames(design_2) <- targets_file$sample_name
 ```
 ## 9. Perform various Filtering Methods: EdgeR, NOIseq
@@ -332,7 +343,7 @@ function_norm <- function(dgl_fil_data, data_path){
   pdf(file.path(data_path,str_glue("voom_plots_{basename(data_path)}.pdf")))
   voom_norm <-  edger_norm[1:3] %>% 
     map2(.y = c("quantile", rep("none",2)),
-      ~voom(.x, design = design,
+      ~voom(.x, design = design_2,
         plot = TRUE, normalize.method = .y)) %>% 
     set_names("voom_Quantile","voom_TMM","voom_TMMwsp")
   dev.off()
@@ -340,7 +351,7 @@ function_norm <- function(dgl_fil_data, data_path){
   pdf(file.path(data_path,str_glue("voom_quality_weights_plots_{basename(data_path)}.pdf")))
   voom_norm_QW <- edger_norm[1:3] %>% 
     map2(.y = c("quantile", rep("none",2)),
-      ~voomWithQualityWeights(.x, design = design,
+      ~voomWithQualityWeights(.x, design = design_2,
         plot = TRUE, normalize.method = .y)) %>% 
     set_names("voomQW_Quantile","voomQW_TMM","voomQW_TMMwsp")
   dev.off()
@@ -520,23 +531,27 @@ function_comp_groups <- function(dgl_norm_data, tool){
 
 comp_FC_sal <- map2(norm_dgls, list("_salmon", "_fc"), ~function_comp_groups(.x,.y))
 
-#comp_FC_sal <- map2(list("salmon" = norm_dgls_sal, "FC" = norm_dgls_FC),
-#  list("_salmon", "_FC"), ~function_comp_groups(.x,.y))
+annot_tbl <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
+  read_gff2()
 
-#comp_FC_sal$salmon %>% 
-#  inner_join(comp_FC_sal$fc, by = "sncRNA") %>% 
-#  write_tsv(str_glue("{str_remove(dat_path[1],'/.+')}/salmon_FC_1cpm_common_grouped.txt"))
+complete_biotypes_seqs <- annot_tbl %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = TRUE) %>% 
+  select(!c(seqnames:strand,type:phase)) %>% 
+  dplyr::rename("sncRNA" = gene_id)
 
-salmon_FC_cpm_union_grouped <- comp_FC_sal$salmon %>% 
-  left_join(mybiotypes %>% as_tibble(rownames="sncRNA")) %>% 
-  full_join(comp_FC_sal$fc, by = "sncRNA") %>% 
+salmon_FC_cpm_union_grouped <- comp_FC_sal %>% 
+  bind_rows() %>% 
+  left_join(complete_biotypes_seqs) %>%
   select(sncRNA, gene_type, everything()) %>% 
   write_tsv(file.path(dirname(dat_path[1]), "salmon_FC_cpm_union_grouped.txt"))
 
-# piCK the 100 top expressed piRNAs, misc_piRNAs and amb_piRNAs between FC salmon and all groups -----
-all_exprs_cpm_TMM <- list.files(path = my_basename, recursive = T , 
-           pattern = "norm_cpm_TMM_", 
-           full.names = T) %>% 
+# piCK the top 100 expressed piRNAs between FC salmon and all groups -----
+all_exprs_cpm_TMM <- dat_path %>% 
+  map(~list.files(path = .x, 
+                  recursive = TRUE ,
+                  pattern = "norm_cpm_TMM_",
+                  full.names = T)) %>% 
   vroom::vroom(id = "method") %>% 
   mutate(method = method %>% basename() %>% str_remove("norm_cpm_TMM_") %>% str_remove(".txt"))
 
@@ -573,7 +588,7 @@ function_prep_hist <- function(dgl_norm_data, annot_gtf){
     filter(gene_id %in% rownames(dgl_norm_data$TMM))
 }
 
- smallRNA_seqs <- map2(norm_dgls, list(annot_tbl, annot_tbl), ~function_prep_hist(.x,.y))
+smallRNA_seqs <- map2(norm_dgls, list(annot_tbl, annot_tbl), ~function_prep_hist(.x,.y))
 
 smallRNA_seqs[["fc"]] %>% # create one also per group
   dplyr::count(gene_type, sort = T) %>% 
