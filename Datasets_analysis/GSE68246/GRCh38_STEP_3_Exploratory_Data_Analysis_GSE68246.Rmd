@@ -1,6 +1,6 @@
 ---
 title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
-subtitle: "Computational workflow for Data Exploration resulted from smallRNA-seq of testis and COLO205 samples"
+subtitle: "Computational workflow for Data Exploration resulted from smallRNA-seq of GSE68246"
 author: "Constantinos Yeles (Konstantinos Geles)"
 date: "`r format(Sys.time(), '%a %b %d %Y')`"
 output:
@@ -46,8 +46,8 @@ todate <- format(Sys.time(), "%d_%b_%Y")
 ### ii. Make the directory for the results of the exploratory data analysis
 
 ```{r make dirs}
-my_basename <- file.path("Datasets_analysis", "Testis_COLO205") ## INPUT name of the main folder 
-my_exp <- "spike_ins_COLO205_Testis" ## INPUT name of the analysis
+my_basename <- file.path("Datasets_analysis", "GSE68246") ## INPUT name of the main folder 
+my_exp <- "Breast_Cancer_CSC" ## INPUT name of the analysis
 genome_input <- "GRCh38" ## INPUT genome version here
 my_tools <- c("salmon","featureCounts")
 dat_path <- file.path(my_basename, str_glue("EDA_{my_exp}_{genome_input}_{todate}"),
@@ -59,44 +59,29 @@ dat_path %>% map(~dir.create(., recursive = TRUE))
 If you have used the [fastq-dl](https://github.com/rpetit3/fastq-dl) tool to download the samples from the European Nucleotide Archive then in the folder you have downloaded them should be also json file(s) that can be imported.
 Otherwise you have to make them from scratch.
 The targets file has to have at least three columns with the column names: "sample_name","group","batch"
-
 ```{r targets file}
 ## import the json files in a list and collapse them
-## here we change also the batch levels as the samples are from two different cell lines / tissues
 targets_file <- file.path(my_basename,"downloaded_samples") %>% 
-  list.files( pattern = ".json", recursive = TRUE, full.names = TRUE) %>% 
+  list.files( pattern = "info.json", recursive = TRUE, full.names = TRUE) %>% 
   map(~jsonlite::fromJSON(.)) %>% 
   bind_rows() %>% 
   as_tibble() %>% 
-  select(read_count, run_accession, #select only the columns with basic info
+  mutate(read_count = as.numeric(read_count)) %>% 
+  select(read_count, run_accession, experiment_accession, #select only the columns with basic info
          sample_title, study_accession) %>% 
-  mutate(group = sample_title %>% str_remove("_[:digit:]$"), 
-         group = group %>% str_remove("_NT$"),
-         cells = case_when(
-           str_detect(group, "COLO205") ~ "COLO205",
-           str_detect(group, "Testis|testis") ~ "Testis"
-         ),
-         batch = sample_title %>% str_remove(".+(?=[:digit:]$)") %>% as.numeric(),
-         batch = case_when(
-           str_detect(cells, "Testis|testis") ~ batch +4,
-           TRUE ~ batch
-         ),
-         batch = as_factor(batch),
+  group_by(experiment_accession, sample_title) %>% 
+  summarise(read_count = sum(read_count)) %>% 
+  mutate(sample_name = sample_title %>% str_replace_all("-| ","_") %>% 
+           str_remove_all("\\(|licate|\\)")) %>% 
+  separate(col = sample_title, into = c("sample_title","batch"), sep = " \\(") %>% 
+  mutate(group = sample_title %>% str_replace_all("-| ","_") %>% str_remove("layer|roid"), 
+         batch = batch %>% str_replace(" ", "_") %>% 
+           str_remove("\\)") %>% str_remove("licate"),
          read_count = as.integer(read_count),
-         
          across(.cols = where(is.character), as_factor)) %>% 
-  dplyr::rename(sample_name = sample_title)
+  select(-sample_title)
 
 targets_file$group %>% levels()
-
-# keep only the samples treated and not treated replicates
-targets_file <- targets_file %>% filter(!str_detect(group, "dil"), 
-                        !str_detect(run_accession,"431|432|433"))
-
-targets_file <- targets_file %>% mutate(
-  across(where(is.factor), droplevels)
-)
-
 ```
 ## 4. Import the salmon files
 
@@ -109,9 +94,6 @@ names(files_salm) <- files_salm %>%
   str_remove(".quant.sf") %>% 
   basename() %>% 
   str_remove("_quant")
-
-# keep only the samples treated and not treated replicates
-files_salm <- files_salm[names(files_salm) %in% as.character(targets_file$run_accession)]
 
 # tximport-------
 txi <- tximport::tximport(files_salm, type = "salmon",
@@ -163,10 +145,7 @@ fc <- list.files(path = my_basename,
   read_rds()
 
 # keep only the samples treated and not treated replicates-----
-fc$counts <- fc$counts[ , str_remove(colnames(fc$counts),pattern = "_Ali.+") %in% as.character(targets_file$run_accession)]
 colnames(fc$counts) <- as.character(targets_file$sample_name)
-
-fc$stat <- fc$stat[ , str_remove(colnames(fc$stat),pattern = "_Ali.+") %in% c("Status",as.character(targets_file$run_accession))] 
 colnames(fc$stat) <-c("Status", as.character(targets_file$sample_name))
 
 # write the matrix for the analysis, annotation stats-----
@@ -234,11 +213,10 @@ design <- model.matrix(~0 + targets_file$group)
 colnames(design) <- colnames(design) %>% 
   str_remove("targets_file\\$group") 
 rownames(design) <- targets_file$sample_name
-design_2 <- model.matrix(~0 + targets_file$group + targets_file$cells + targets_file$batch)
+design_2 <- model.matrix(~0 + targets_file$group + targets_file$batch)
 colnames(design_2) <- colnames(design_2) %>% 
   str_remove("targets_file\\$group") %>% 
-  str_remove("targets_file\\$batch") %>% 
-  str_remove("targets_file\\$cells")
+  str_remove("targets_file\\$batch")
 rownames(design_2) <- targets_file$sample_name
 ```
 ## 9. Perform various Filtering Methods: EdgeR, NOIseq
@@ -691,296 +669,3 @@ groups %>% map2(list(FC_groups),
   ggtitle(str_glue("FeatureCounts_{.x}")))  
 dev.off()
 ```
-
-## 18. plots and tables regarding piRNAs and spike-ins
-### i. Use two different datasets (1 testis, 1 COLO205)
-```{r Dataset COLO205 FC, salmon}
-# Featurecounts ----------------------------------------------------------------
-# divide the primary dataset
-dgl_COLO_fc <- DGEList(counts = fc$counts[, str_detect(colnames(fc$counts), "COLO")],
-               samples =  targets_file %>% filter(str_detect(cells, "COLO")))
-
-group_COLO_fc <- filter(targets_file, str_detect(cells, "COLO"))$group %>% droplevels()
-#design matrix
-design_COLO <- model.matrix(~0 + group_COLO_fc)
-
-colnames(design_COLO) <- colnames(design_COLO) %>% 
-  str_remove("..+_fc") 
-
-rownames(design_COLO) <- filter(targets_file,str_detect(cells, "COLO"))$sample_name
-#filtering
-keep.exprs_COLO <- filterByExpr.DGEList(dgl_COLO_fc, design = design_COLO)
-dgl_COLO_fc_filt <- dgl_COLO_fc[keep.exprs_COLO,,keep.lib.sizes=FALSE]
-
-#normalization
-cpm_COLO_fc_norm <- dgl_COLO_fc_filt %>% 
-  cpm(normalized.lib.sizes = TRUE,
-      log = FALSE,
-      prior.count = 2) %>% 
-  as_tibble(rownames = "sncRNA") 
-
-# Salmon -----------------------------------------------------------------------
-# import only the COLO files
-files_salm_COLO <- files_salm[names(files_salm) %in% as.character(dgl_COLO_fc_filt$samples$run_accession)]
-
-# tximport
-txi <- tximport::tximport(files_salm_COLO, type = "salmon",
-  txOut = TRUE, countsFromAbundance = "lengthScaledTPM")
-# DGElist
-# from https://bioconductor.org/packages/release/bioc/vignettes/tximport/inst/doc/tximport.html
-# we follow the instructions to import for edgeR 
-cts <- txi$counts
-normMat <- txi$length
-
-# change the colnames of the salmon objects
-identical(as.character(dgl_COLO_fc_filt$samples$run_accession),colnames(cts))
-colnames(cts) <- dgl_COLO_fc_filt$samples$sample_name
-colnames(normMat) <- dgl_COLO_fc_filt$samples$sample_name
-
-# Obtaining per-observation scaling factors for length, adjusted to avoid
-# changing the magnitude of the counts
-normMat <- normMat/exp(rowMeans(log(normMat)))
-normCts <- cts/normMat
-
-# Computing effective library sizes from scaled counts, to account for
-# composition biases between samples
-eff.lib <- calcNormFactors(normCts) * colSums(normCts)
-
-# Combining effective library sizes with the length factors, and calculating
-# offsets for a log-link GLM
-normMat <- sweep(normMat, 2, eff.lib, "*")
-normMat <- log(normMat)
-
-# Creating a DGEList object for use in edgeR.
-dgl_salmon_COLO <- DGEList(cts, 
-                           samples = targets_file %>% filter(str_detect(cells, "COLO"))) %>% 
-  scaleOffset(normMat) 
-# remove objects.
-rm(cts, normCts, normMat, txi)
-
-keep.exprs_COLO_sal <- filterByExpr.DGEList(dgl_salmon_COLO, design = design_COLO)
-dgl_salmon_COLO_filt <- dgl_salmon_COLO[keep.exprs_COLO_sal,,keep.lib.sizes=FALSE]
-
-#normalization
-cpm_salmon_COLO_norm <- dgl_salmon_COLO_filt %>% 
-  cpm(normalized.lib.sizes = TRUE,
-      log = FALSE,
-      prior.count = 2) %>% 
-  as_tibble(rownames = "sncRNA") 
-
-# join the two methods ---------------------------------------------------------
-CPM_COLO_fc_salmon <- bind_rows("FeatureCounts" = cpm_COLO_fc_norm,
-                                "salmon" = cpm_salmon_COLO_norm,
-                                .id = "method") 
-```
-### ii. Load the samples of testis
-
-```{r Dataset Testis FC, salmon}
-# Featurecounts ----------------------------------------------------------------
-# divide the primary FC dataset
-dgl_testis_fc <- DGEList(counts = fc$counts[, str_detect(colnames(fc$counts), "Testis|testis")],
-               samples =  targets_file %>% filter(str_detect(cells, "Testis|testis")))
-
-group_testis_fc <- filter(targets_file, str_detect(cells, "Testis|testis"))$group %>% droplevels()
-#design matrix
-design_testis <- model.matrix(~0 + group_testis_fc)
-
-colnames(design_testis) <- colnames(design_testis) %>% 
-  str_remove("..+_fc") 
-
-rownames(design_testis) <- filter(targets_file,str_detect(cells, "Testis|testis"))$sample_name
-#filtering
-keep.exprs_testis <- filterByExpr.DGEList(dgl_testis_fc, design = design_testis)
-dgl_testis_fc_filt <- dgl_testis_fc[keep.exprs_testis,,keep.lib.sizes=FALSE]
-
-#normalization
-cpm_testis_fc_norm <- dgl_testis_fc_filt %>% 
-  cpm(normalized.lib.sizes = TRUE,
-      log = FALSE,
-      prior.count = 2) %>% 
-  as_tibble(rownames = "sncRNA") 
-
-# Salmon -----------------------------------------------------------------------
-# import only the testis files
-files_salm_testis <- files_salm[names(files_salm) %in% as.character(dgl_testis_fc_filt$samples$run_accession)]
-
-# tximport
-txi <- tximport::tximport(files_salm_testis, type = "salmon",
-  txOut = TRUE, countsFromAbundance = "lengthScaledTPM")
-# DGElist
-# from https://bioconductor.org/packages/release/bioc/vignettes/tximport/inst/doc/tximport.html
-# we follow the instructions to import for edgeR 
-cts <- txi$counts
-normMat <- txi$length
-
-# change the colnames of the salmon objects
-identical(as.character(dgl_testis_fc_filt$samples$run_accession),colnames(cts))
-colnames(cts) <- dgl_testis_fc_filt$samples$sample_name
-colnames(normMat) <- dgl_testis_fc_filt$samples$sample_name
-
-# Obtaining per-observation scaling factors for length, adjusted to avoid
-# changing the magnitude of the counts
-normMat <- normMat/exp(rowMeans(log(normMat)))
-normCts <- cts/normMat
-
-# Computing effective library sizes from scaled counts, to account for
-# composition biases between samples
-eff.lib <- calcNormFactors(normCts) * colSums(normCts)
-
-# Combining effective library sizes with the length factors, and calculating
-# offsets for a log-link GLM
-normMat <- sweep(normMat, 2, eff.lib, "*")
-normMat <- log(normMat)
-
-# Creating a DGEList object for use in edgeR.
-dgl_salmon_testis <- DGEList(cts, 
-                           samples = targets_file %>% filter(str_detect(cells, "Testis|testis"))) %>% 
-  scaleOffset(normMat) 
-# remove objects.
-rm(cts, normCts, normMat, txi)
-
-keep.exprs_testis_sal <- filterByExpr.DGEList(dgl_salmon_testis, design = design_testis)
-dgl_salmon_testis_filt <- dgl_salmon_testis[keep.exprs_testis_sal,,keep.lib.sizes=FALSE]
-
-#normalization
-cpm_salmon_testis_norm <- dgl_salmon_testis_filt %>% 
-  cpm(normalized.lib.sizes = TRUE,
-      log = FALSE,
-      prior.count = 2) %>% 
-  as_tibble(rownames = "sncRNA") 
-
-# join the two methods ---------------------------------------------------------
-CPM_testis_fc_salmon <- bind_rows("FeatureCounts" = cpm_testis_fc_norm,
-                                "salmon" = cpm_salmon_testis_norm,
-                                .id = "method") 
-
-```
-### iii. Plot the cpm of spike-ins in COLO205 before and after treatment
-
-```{r barplot of spike ins}
-spikes_ins_plot <- full_join(CPM_COLO_fc_salmon , CPM_testis_fc_salmon, 
-                             by = c("method","sncRNA")) %>% 
-  filter(str_detect(sncRNA,"SS_")) %>% 
-  pivot_longer(cols = -c(method, sncRNA)) %>% 
-  mutate(name = factor(name, levels = c("Non_treated_COLO205_1",
-                                        "Non_treated_COLO205_2",
-                                        "Non_treated_COLO205_3",
-                                        "Treated_COLO205_1",
-                                        "Treated_COLO205_2",
-                                        "Treated_COLO205_3",
-                                        "Non_treated_Testis_1",
-                                        "Treated_testis_1"))) %>% 
-  ggplot(mapping = aes(x = sncRNA, y= value, fill = method)) +
-  geom_bar(stat = "identity", position=position_dodge(), width=0.2) +
-  scale_x_discrete(name = "piRNA-like ~ spike-ins", guide = guide_axis(angle = 45)) + 
-  scale_y_continuous(name = "Counts per million", labels = scales::comma, breaks = scales::pretty_breaks(n = 10)) +
-  theme_bw() +
-  scale_fill_manual(values=c('#999999','#E69F00')) +
-  facet_wrap(~ name, ncol = 3) 
-
-
-zoom_spikes_ins_plot <-spikes_ins_plot + coord_cartesian(ylim = c(0, 3000)) 
-
-pdf(file.path(dirname(dat_path[1]), "spike_ins_Testis_COLO205_treat_FC_salmon.pdf"))
-spikes_ins_plot
-zoom_spikes_ins_plot
-dev.off()
-```
-### iiv. BoxPlot of the cpm of piRNAs in COLO205 and Testis before and after treatment
-
-```{r boxplot of piRNAs}
-
-# function for summarizing stats
-my_quantile <- function(x) {
-  tibble(
-    min = min(x, na.rm = TRUE),
-    q1 = quantile(x, 0.25, na.rm = TRUE), 
-    mean = mean(x, na.rm = TRUE),
-    median = median(x, na.rm = TRUE),
-    q3 = quantile(x, 0.75, na.rm = TRUE),
-    max = max(x, na.rm = TRUE),
-    sd = sd(x, na.rm = TRUE))
-}
-
-piRNAs_COLO_testis <- full_join(CPM_COLO_fc_salmon , CPM_testis_fc_salmon, 
-                             by = c("method","sncRNA")) %>% 
-  left_join(complete_biotypes_seqs) %>% # found in 15. paragraph
-  filter(str_detect(gene_type,"piRNA")) %>% 
-  select(-c(seq_RNA, source,GENCODE_annot:sRNA_id2)) %>% 
-  pivot_longer(cols = -c(method, sncRNA,gene_type))
-
-# check the stats
-piRNAs_COLO_testis%>% 
-  group_by(name) %>% 
-  summarise(my_quantile(value))
-
-
-piRNAs_plot <- piRNAs_COLO_testis %>% 
-  mutate(name = factor(name, levels = c("Non_treated_COLO205_1",
-                                        "Non_treated_COLO205_2",
-                                        "Non_treated_COLO205_3",
-                                        "Treated_COLO205_1",
-                                        "Treated_COLO205_2",
-                                        "Treated_COLO205_3",
-                                        "Non_treated_Testis_1",
-                                        "Treated_testis_1"))) %>% 
-  filter(value < 100) %>% 
-  ggplot(mapping = aes(x = gene_type, y= value, fill = method)) +
-  geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.alpha = 0.1, 
-             outlier.size=1, notch=TRUE, width = 0.5)+
-  scale_x_discrete(name = "samples", guide = guide_axis(angle = 45)) +
-  scale_y_continuous(name = "Counts per million", 
-                     labels = scales::comma, 
-                     breaks = scales::pretty_breaks(n = 10)) +
-  theme_bw() +
-  scale_fill_manual(values=c('#999999','#E69F00')) +
-  facet_wrap(~ name, ncol = 3) 
-
-pdf(file.path(dirname(dat_path[1]), "piRNAs_bxplot_Testis_COLO205_treat_FC_salmon.pdf"))
-piRNAs_plot
-dev.off()
-```
-
-
-
-
-
-
-
-### iii. make a ggbio plot 
-```{r}
-library("BSgenome.Hsapiens.UCSC.hg38")
-library(ggbio)
-
-bg <- BSgenome.Hsapiens.UCSC.hg38
-# import the bam of testis sample
-testis_pool_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_align/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam"
-Rsamtools::indexBam(testis_pool_bam)
-
-testis_pool_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_align/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam" %>%
-  read_bam %>% 
-  select(seq) %>%
-  filter_by_overlaps(wh,!is_unmapped_query)
-
-testis_pool_FC_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam.featureCounts.bam" 
-
-Rsamtools::sortBam(testis_pool_FC_bam, 
-        destination ="../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam.featureCounts.sorted.bam")
-
-testis_pool_FC_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam.featureCounts.sorted.bam.bam"
-Rsamtools::indexBam(testis_pool_FC_bam)
-
-testis_pool_FC_bam_read <-testis_pool_FC_bam %>%
-  read_bam %>% 
-  select(XS,XT,seq) %>%
-  filter_by_overlaps(wh, minoverlap = 10L)
-
- wh %>% select(seq_RNA,gene_id) %>% as_tibble
-aligned_smallRNAs<-testis_pool_FC_bam_read %>% select(XT, cigar) %>% as_tibble %>% count(XT) # %>% arrange(desc(width),seq)
-# the plot
-p.mis <- autoplot(testis_pool_bam, 
-                  bsgenome = bg, 
-                  which = wh, 
-                  stat = "mismatch")
-```
-
