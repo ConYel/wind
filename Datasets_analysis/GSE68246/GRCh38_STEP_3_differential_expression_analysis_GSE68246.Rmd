@@ -20,10 +20,10 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ```
 
 ## Introduction
-Following the data_exploration_salmon_fc worklow in most cases we want to 
+Following the data_exploration_salmon_fc workflow in most cases we want to 
 perform differential expression (DE) analysis. We follow instructions from 
 various packages utilized for DE with the objects resulted from the previous 
-workflow.
+EDA workflow.
 
 ## Load libraries
 
@@ -44,14 +44,13 @@ todate <- format(Sys.time(), "%d_%b_%Y")
 ## Make the directory for the results of the DE analysis
 
 ```{r make dirs}
-my_basename <- "GSE68246"
-my_exp <- "Breast_cancer"
-my_exp_sal <- "salmon"
-my_exp_fc <- "featureCounts"
-dat_path <-  str_glue("{my_basename}/DEA_{my_exp}_{todate}/{c(my_exp_sal,my_exp_fc)}") %>% 
-  as.list %>% 
-  set_names("salmon","featureCounts")
-dat_path %>% map(~dir.create(str_glue("./{.x}"), recursive = TRUE))
+my_basename <- file.path("Datasets_analysis", "GSE68246") ## INPUT name of the main folder 
+my_exp <- "Breast_Cancer_CSC" ## INPUT name of the analysis
+genome_input <- "GRCh38" ## INPUT genome version here
+my_tools <- c("salmon","featureCounts")
+dat_path <- file.path(my_basename, str_glue("DEA_{my_exp}_{genome_input}_{todate}"),
+                      my_tools) %>% set_names(my_tools)
+dat_path %>% map(~dir.create(., recursive = TRUE))
 ```
 ## 1. Import the normalized files
 
@@ -101,8 +100,9 @@ Perform the analysis with edgeR TMM normalization for both salmon and featurecou
 
 ```{r edgeR_DE}
 # design ----
+colnames(design) # check the names and make the contrasts
 con_mat <- makeContrasts(
-  Spheroid_Mono = MCF_7_Spheroid - MCF_7_Monolayer,
+  Spheroid_Mono = MCF_7_Sphe - MCF_7_Mono,
   levels = design)
 
 ## salmon ----
@@ -116,12 +116,14 @@ DE_salmon_edgR <- con_mat %>%
   topTags(n = nrow(.), adjust.method = "BH", sort.by = "PValue", p.value = 1) %>% 
    .$table %>% 
   as_tibble(rownames = "smallRNA") %>% 
-  write_tsv(str_glue("{dat_path[['salmon']]}/DE_salmon_edgR_TMM_{.x}.txt"))  
+  write_tsv(file.path(dat_path[['salmon']], str_c("DE_salmon_edgR_TMM_", .x, ".txt")))  
  )
- 
+
+pdf(file.path(dat_path[['salmon']],str_c("hist_edger_p_value_", names(DE_salmon_edgR[1]),".pdf") ))
 hist(DE_salmon_edgR[[1]]$PValue, breaks = 0:20/20,
      col = "grey50", border = "white")
-
+ dev.off()
+ 
 salmon_edgeR_TMM_p <- DE_salmon_edgR[[1]] %>% 
   mutate(salmon_edgeR = if_else(
     FDR >= 0.05, 0, if_else(
@@ -139,12 +141,14 @@ DE_FC_edgR <- con_mat %>% colnames() %>% set_names() %>%
   topTags(n = nrow(.), adjust.method = "BH", sort.by = "PValue", p.value = 1) %>% 
    .$table %>% 
   as_tibble(rownames = "smallRNA") %>% 
-  write_tsv(str_glue("{dat_path[['featureCounts']]}/DE_fc_edgR_TMM_{.x}.txt"))  
+  write_tsv(file.path(dat_path[['featureCounts']],str_c("DE_fc_edgR_TMM",.x ,".txt")))  
  )
 
+pdf(file.path(dat_path[['featureCounts']],str_c("hist_edger_p_value_", names(DE_salmon_edgR[1]),".pdf") ))
 hist(DE_FC_edgR[[1]]$PValue, breaks = 0:20/20,
      col = "grey50", border = "white")
-
+ dev.off()
+ 
 fc_edgeR_TMM_p <- DE_FC_edgR[[1]] %>% 
   mutate(fc_edgeR = if_else(
     FDR >= 0.05, 0, if_else(
@@ -157,7 +161,7 @@ fc_edgeR_TMM_p <- DE_FC_edgR[[1]] %>%
 results <-  salmon_edgeR_TMM_p %>% 
   inner_join(fc_edgeR_TMM_p) %>%  select(-smallRNA)
 
-pdf(str_glue("{dat_path}/venn_diagram_DE_salmon_fC_edgeR.pdf"))
+pdf(file.path(dirname(dat_path[1]), "venn_diagram_DE_salmon_fC_edgeR.pdf"))
 vennDiagram(results, 
     include=c("up", "down"),
     counts.col=c("red", "blue"),
@@ -182,12 +186,14 @@ salmon_DES <- con_mat %>% colnames() %>% set_names() %>%
                              sort.by = "p") %>% 
   as_tibble(rownames = "smallRNA") %>% 
   rename_at(vars(logFC:B), list(~str_c(.,"_",!!quo(.x)))) %>% 
-  write_tsv(str_glue("{dat_path[['salmon']]}/DE_salmon_vm_QW_TMM_{.x}.txt"))  
+  write_tsv(file.path(dat_path[['salmon']], str_c("DE_salmon_vm_QW_TMM_",.x, ".txt")))  
  )
 
+pdf(file.path(dat_path[['salmon']],str_c("hist_limma_p_value_", names(salmon_DES[1]),".pdf") ))
 hist(salmon_DES[[1]] %>% select(starts_with("P.Value")) %>% deframe(), 
      breaks = 0:20/20,
      col = "grey50", border = "white")
+dev.off()
 
 salmon_vm_QW_TMM_p <- salmon_DES[[1]] %>% 
   mutate(salmon_voomQ = if_else(
@@ -210,12 +216,14 @@ fc_DES <- con_mat %>% colnames() %>% set_names() %>%
                              sort.by = "p") %>% 
   as_tibble(rownames = "smallRNA") %>% 
   rename_at(vars(logFC:B), list(~str_c(.,"_",!!quo(.x)))) %>% 
-  write_tsv(str_glue("{dat_path[['featureCounts']]}/DE_fc_vm_QW_TMM_{.x}.txt"))  
+  write_tsv(file.path(dat_path[['featureCounts']], str_c("DE_fc_vm_QW_TMM_",.x,".txt")))  
  )
 
+pdf(file.path(dat_path[['featureCounts']],str_c("hist_limma_p_value_", names(fc_DES[1]),".pdf") ))
 hist(fc_DES[[1]] %>% select(starts_with("P.Value")) %>% deframe(), 
      breaks = 0:20/20,
      col = "grey50", border = "white")
+dev.off()
 
 fc_vm_QW_TMM_p <- fc_DES[[1]] %>% 
   mutate(fc_voomQ = if_else(
@@ -226,7 +234,8 @@ fc_vm_QW_TMM_p <- fc_DES[[1]] %>%
   select(smallRNA , fc_voomQ )
 
 # venn diagram for salmon/fc limma -----
-nc_RNA_categories <- plyranges::read_gff2("../genome_transc_human/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
+nc_RNA_categories <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
+  plyranges::read_gff2() %>% 
   as_tibble() %>% 
   select(gene_id, gene_type) %>% 
   distinct(gene_id, .keep_all = TRUE) 
@@ -234,7 +243,7 @@ nc_RNA_categories <- plyranges::read_gff2("../genome_transc_human/ncRNA_transcri
 results <-  salmon_vm_QW_TMM_p %>% 
   inner_join(fc_vm_QW_TMM_p) %>%  select(-smallRNA)
 
-pdf(str_glue("{dat_path}/venn_diagram_DE_salmon_fC_limma_Spheroid_Mono.pdf"))
+pdf(file.path(dirname(dat_path[1]), "venn_diagram_DE_salmon_fC_limma_Spheroid_Mono.pdf"))
 vennDiagram(results, 
     include=c("up", "down"),
     counts.col=c("red", "blue"),
@@ -254,21 +263,37 @@ map2(fc_DES, salmon_DES, ~.x %>%
      ) %>% 
   purrr::reduce(full_join) %>% 
   inner_join(nc_RNA_categories, by = c("smallRNA" = "gene_id")) %>% 
-  write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/all_comparisons_voom_QW_TMM_salmon_fc_LFCs_{todate}.txt"))
+  write_tsv(file.path(dirname(dat_path[1]),str_c("all_comparisons_voom_QW_TMM_salmon_fc_LFCs_", todate,".txt")))
 
 ```
 ## 6. Compare the DE results with public results
 
 ```{r comparison with public}
+# download the file with the public results first from here: 
+pub_res_files <- file.path(dirname(dat_path[1]), "Public_results_GSE68246.xlsx")
+download.file(url="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4807162/bin/ijbsv12p0427s1.xlsx", destfile = pub_res_files)
+
+
 ## import the public results -----
-public_res <- "Public_results_GSE68246.csv" %>% 
-  read_tsv() %>% 
+public_res_up <-  pub_res_files %>% 
+  readxl::read_xlsx(sheet = 6, skip = 1) %>% 
+  select(1, 6, 13)
+
+names(public_res_up) <- c("sequence", "FC", "miRNA")
+
+public_res_down <-  pub_res_files %>% 
+  readxl::read_xlsx(sheet = 7, skip = 1) %>% 
+  select(1, 6, 13)
+
+names(public_res_down) <- c("sequence", "FC", "miRNA")
+
+public_res <- bind_rows(public_res_up,public_res_down) %>% 
   mutate(logFC = gtools::foldchange2logratio(FC)) %>% 
-  select(smallRNA, FC, logFC, sequence) %>% 
+  select(miRNA, FC, logFC, sequence) %>% 
   rename_all(.funs = ~ .x %>% str_c("_public_res"))
 
 ## import the sequences from the GTF file -----
-smallRNAs_gtf <- list.files(pattern = "_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
+smallRNAs_gtf <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
   plyranges::read_gff2() %>% 
   as_tibble() %>% 
   select(gene_id,  seq_RNA,gene_type) %>% 
@@ -276,13 +301,17 @@ smallRNAs_gtf <- list.files(pattern = "_100bp_RNA_Central_piRNAbank_hg38.gtf") %
   dplyr::rename("smallRNA" = gene_id)
 
 ## import the complete DE table with fold changes ----
-all_comp <- read_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/all_comparisons_voom_QW_TMM_salmon_fc_LFCs_{todate}.txt"))
+all_comp <- list.files(path = dirname(dat_path[1]), pattern = "all_comparisons",
+                       full.names = TRUE) %>% 
+  read_tsv()
 
-## join all comparisons with smallRNAs_gtf ----
+## join all comparisons with smallRNAs_gtf  and public results----
 public_and_all_comp <- all_comp %>% 
   left_join(smallRNAs_gtf) %>% 
   full_join(public_res, by = c("seq_RNA" = "sequence_public_res")) %>% 
-  write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/public_and_all_comp_voom_QW_TMM_salmon_fc_LFCs_{todate}.txt"))
+  write_tsv(file.path(dirname(dat_path[1]),
+                      str_c("public_and_all_comp_voom_QW_TMM_salmon_fc_LFCs_",
+                                       todate,".txt")))
 ```
 # 7. Find predicted targets
 
@@ -313,23 +342,26 @@ library(circlize)
 
 ```{r heatmap dataload}
 # load the piRNAs log fold changes
-piRNAs_DE <- list.files(pattern = "all_comparisons_voom_QW_TMM") %>% 
+piRNAs_DE <- list.files(path = dirname(dat_path[1]), 
+                        pattern = "all_comparisons",
+                       full.names = TRUE) %>% 
   read_tsv() %>% 
   filter(gene_type == "piRNA",
          across(.cols = contains("adj.P.Val"), 
-                .fns = ~ .x< 0.05)) %>% 
-  dplyr::select(smallRNA, contains("logFC")) %>% 
-  write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/all_comp_voom_QW_DE_piRNA_{todate}.txt"))
-  
+                .fns = ~ .x < 0.05)) %>% 
+  dplyr::select(smallRNA, contains("logFC")) %>%  
+  dplyr::filter((logFC_Spheroid_Mono_FC > 0 & logFC_Spheroid_Mono_salmon > 0) |      (logFC_Spheroid_Mono_FC < 0 & logFC_Spheroid_Mono_salmon < 0))
 
+  
+  write_tsv(file.path(dirname(dat_path[1]), 
+                      str_c("all_logFC_voom_QW_DE_piRNA_",
+    todate,".txt")))
+  
 # load the piRNA expression matrix----
 ## featurecounts
-fc_list <- "list_norm_dgls_featureCounts.rds" %>% 
-  read_rds() %>% 
-  .[["TMM"]] 
-
-fc_cpm <- fc_list  %>% 
-  cpm(log =TRUE) %>%
+fc_cpm <- fc_norm %>% 
+  .[["TMM"]] %>% 
+   cpm(log =TRUE) %>%
   .[rownames(.) %in% piRNAs_DE$smallRNA,] 
 
 # make the matrices for the heatmap -----
@@ -354,10 +386,10 @@ colnames(FC_mat_1) <- colnames(FC_mat_1) %>% str_remove("_GR_")
 
 # add the Annotation ----
 #expression
-ha_1 <- HeatmapAnnotation(Group = fc_list$samples$group,
+ha_1 <- HeatmapAnnotation(Group = fc_norm[["TMM"]]$samples$group,
                           annotation_name_side = "left",
-                          col = list(Group = fc_list$colours %>% 
-                                       set_names(fc_list$samples$group)))
+                          col = list(Group =  fc_norm[["TMM"]]$colours %>% 
+                                       set_names( fc_norm[["TMM"]]$samples$group)))
 
 # lFCS
 ha_1_LFCs <- HeatmapAnnotation(Method = c("FeatureCounts", "salmon"),
@@ -392,9 +424,11 @@ ht_1 <- Heatmap(matrix = FC_mat_1, #data
         clustering_distance_rows = "spearman",
         row_dend_reorder = TRUE
 )
+
 rownames(lfc_piRNAs_DE) <- lfc_piRNAs_DE %>% 
   rownames() %>% 
   str_remove("_GR_.+")
+
 ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
         top_annotation = ha_1_LFCs, #annot
         col = f_1_LFCs, #colors data    
@@ -409,13 +443,14 @@ ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
         row_dend_reorder = TRUE
 )
 
-draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),
+draw(ht_1 + ht_1_lFCs,
+     column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),
      merge_legend = TRUE)
 
-tiff("GSE68246_spheroid_vs_mono_heatmap_FC.tiff", 
+tiff(filename = file.path(dirname(dat_path[1]),"GSE68246_spheroid_vs_mono_heatmap_FC.tiff"),
      compression = "none", height = 10, width = 14,  units = 'in', res = 300)
-draw(ht_1+ht_1_lFCs,
-     column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"), 
+draw(ht_1 + ht_1_lFCs,
+     column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),
      merge_legend = TRUE)
 dev.off()
 ```

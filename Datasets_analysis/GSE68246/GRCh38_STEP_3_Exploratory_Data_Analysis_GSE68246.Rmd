@@ -1,6 +1,6 @@
 ---
 title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
-subtitle: "Computational workflow for Data Exploration resulted from smallRNA-seq of GSE68246"
+subtitle: "Computational workflow for Data Exploration resulted from smallRNA-seq of GSE68246, regarding Human Breast MCF-7 Cell"
 author: "Constantinos Yeles (Konstantinos Geles)"
 date: "`r format(Sys.time(), '%a %b %d %Y')`"
 output:
@@ -668,4 +668,338 @@ groups %>% map2(list(FC_groups),
   ggseqlogo(method = 'prob', font="roboto_regular") +
   ggtitle(str_glue("FeatureCounts_{.x}")))  
 dev.off()
+```
+## 18. Reads histograms and general information  
+### i. extract the information of length for reads
+Here we collapse the information extracted from the bam files of aligned reads, 
+we use the docker of sncrna_workflow to perform it.
+
+```{bash Reads info}
+## filter for reads of 15-49 bases
+for file in my_data/star_results/*/*_sorted.bam; 
+do
+where_to_save=`dirname ${file}`; 
+regex=`basename ${file}`; 
+samp="${regex%%.trimmed_sorted.bam}"; 
+echo "Processing sample ${samp} start: $(date)";  
+samtools view -h -@ 6 ${file} | awk 'length($10) > 14 && length($10) < 50 || $1 ~ /^@/' | samtools view -bS - >  ${where_to_save}/${samp}_filt_15_49_sorted.bam;
+echo "end:$(date)"; 
+done
+
+## find length of reads from STAR - featureCounts
+#cut -f1 my_data/piRNAs_hist.txt > my_data/piRNA_ids.txt | grep -F -w -f my_data/piRNA_ids.txt  -
+
+for file in my_data/spike_ins/star_results/*.featureCounts.bam; 
+do
+where_to_save=`dirname ${file}`; 
+regex=`basename ${file}`; 
+samp="${regex%%.trimmed_sorted.bam.featureCounts.bam}"; 
+echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/${samp}_hist.txt";  
+samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$18}'| sed 's/XT:Z://g'  | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist.txt;
+echo "end:$(date)"; 
+done
+
+## find length of reads from salmon
+for file in my_data/quants/*.fastq.gz.bam;  
+do 
+where_to_save=`dirname ${file}`;  
+regex=`basename ${file}`;  
+samp="${regex%%.trimmed*}";  
+echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/${samp}_hist_allRNA.txt"; 
+samtools view  -@ 2 ${file} | awk 'BEGIN{FS=OFS="\t"}{print $1,length($10),$3}'| sort -k1,1 | bedtools groupby -g 1 -c 2,3 -o first,distinct -delim "," | cut -f2,3 | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_allRNA.txt; 
+echo "end:$(date)"; 
+done
+
+## if it was to make only for piRNA
+samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$3}'| grep -F -w -f my_data/piRNA_ids.txt  - | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_pirna.txt;
+
+```
+### ii. make a txt file with the info
+here we return to the Rstudio docker in order to perform the visualization
+
+```{r}
+library(tidyverse)
+hist_all_RNA <- list.files(path = "../genome_transc_human/quants", 
+                           pattern = "hist_allRNA.txt", 
+                           full.names = T) %>% 
+  vroom::vroom(id = "file", col_names = c("read_count", "read_length", "smallRNA")) %>% 
+  mutate(file = basename(file) %>% str_remove("_hist_all.+"))
+  
+```
+### iii. ggplot for histograms
+
+```{r ggplots hist reads}
+library(tidyverse)
+library(plyranges)
+#piRNAs_hist <- read_tsv("piRNAs_hist.txt")
+#  gtf_piB_RCentr <- read_gff2("mouse_data/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_mm10.gtf") %>% 
+  as_tibble() %>% 
+  select(gene_id,gene_type) %>% 
+  distinct(gene_id, .keep_all = T) %>% 
+    mutate(gene_type = as_factor(gene_type))
+# featureCounts(FC) and salmon files -------
+hist_files_fc <- list.files(path ="mouse_datasets/star_results",
+                         pattern = "_hist.txt", 
+                         recursive = TRUE, full.names = TRUE) %>% 
+    set_names(. %>% 
+                basename() %>%
+                str_remove("_hist.txt")
+              )
+
+hist_files_salmon <- list.files(path ="mouse_datasets/quants",
+                         pattern = "_hist_allRNA.txt", 
+                         recursive = TRUE, full.names = TRUE) %>% 
+    set_names(. %>% 
+                basename() %>%
+                str_remove("_hist_allRNA.txt")
+              )
+#FC reads info----
+## add the regex of smallRNA names
+smallRNA_Categ_regex <- levels(gtf_piB_RCentr$gene_type) %>% 
+  set_names(.) %>% 
+  map(~gtf_piB_RCentr %>%  
+  filter(gene_type == .x) %>% 
+  .$gene_id %>% 
+  str_c(collapse = "|")) %>% 
+  c(.,"Not_assigned" = "Not_assigned")
+
+## function to filter a df of mappeds reads per small RNA category using regex
+
+reads_info_fc <- function(df, Categ_regex_list){
+  Categ_regex_list %>% #regex with rna_names "mmu_piR_039595|mmu_piR_039148"
+    imap(~df %>% # for each category summarise the reads
+           filter(str_detect(sncRNA,.x)) %>%
+           summarise(!!str_c(.y,"_Reads"):= sum(Reads)) %>%
+           add_column(Category = "Reads")
+         ) %>%
+    purrr::reduce(left_join) %>% 
+    left_join(df %>% 
+                filter(Alignment!="Not_assigned") %>% 
+                group_by(Alignment) %>% 
+                summarise(S=sum(Reads)) %>%
+                mutate( Category = "Reads") %>%  
+                pivot_wider(names_from = Alignment, values_from = S)) %>% 
+    mutate(Reads_in_analysis = Not_assigned_Reads + Multimapped + Unique, 
+      Mapped_Reads = Multimapped + Unique, 
+      Mapped_Reads_perc = 
+        as.character(round((Mapped_Reads/Reads_in_analysis)*100, digits = 2)) %>%
+        str_c(.,"%")) %>% 
+         select(Category, Reads_in_analysis, Mapped_Reads, 
+                Mapped_Reads_perc,
+                Unique,
+                Multimapped,
+                Not_assigned_Reads, everything())
+}
+
+
+## read the hist files and add information about multi-mapped reads  
+df_list <- hist_files_fc %>% 
+  map(~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
+  mutate(Length = as_factor(Length),
+         sncRNA = if_else(is.na(sncRNA),"Not_assigned",sncRNA),
+         Alignment = case_when(
+           sncRNA == "Not_assigned" ~ "Not_assigned",
+           str_detect(sncRNA, ",") ~"Multimapped" ,
+           TRUE ~ "Unique" )
+         )
+  )
+
+## create the data
+FC_reads_info <- df_list %>% 
+  imap(~reads_info_fc(.x, smallRNA_Categ_regex) %>% 
+         mutate(Category = .y)) %>% 
+  purrr::reduce(bind_rows)
+ 
+
+dgl_norm$featureCounts$TMM$counts %>% 
+  as_tibble(rownames = "smallRNA") %>% 
+  filter(smallRNA %in% annot_tbl$gene_id) %>% # annot_tbl <- gtf_piB_RCentr %>% filter(gene_type =="piRNA")
+  pivot_longer(-smallRNA) %>% 
+  mutate(piRNA = if_else(value > 0,1,0)) %>% 
+  group_by(name) %>% 
+  summarise(piRNAs_in_sample =sum(piRNA)) %>% 
+  dplyr::rename(Category = name) %>% 
+  left_join(FC_reads_info) %>% # save them on a txt
+write_tsv("mouse_datasets/FC_reads_info.txt")
+
+# featureCounts histograms of piRNAs------
+piRNA_DF_hist<- df_list %>% 
+  bind_rows(.id = "Sample") %>% 
+  filter(sncRNA != "Not_assigned") %>% 
+  filter(str_detect(sncRNA, smallRNA_Categ_regex[["piRNA"]]))
+
+#FC reads hist piRNA----
+piRNA_DF_hist %>% 
+   group_by(Sample, Length, Alignment) %>%
+   summarise(Reads = sum(Reads)) %>%
+   ggplot() +
+   geom_bar(mapping = 
+              aes(x = Length, 
+                  y = Reads, 
+                  fill = Alignment),
+            stat = "identity") + 
+   scale_y_continuous(labels = scales::comma) +
+   coord_cartesian(ylim = c(0,2000000))+
+   theme_bw() +
+   facet_wrap(~Sample, ncol = 3) +
+   
+   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+pdf(str_glue("mouse_datasets/histograms_piRNA_reads_facets_fc.pdf"))
+df_list %>% imap(~.x %>%
+           filter(str_detect(sncRNA, smallRNA_Categ_regex[["piRNA"]])) %>%
+           group_by(Length,Alignment) %>%
+           summarise(Reads = sum(Reads)) %>%
+           ggplot() +
+             geom_bar(mapping = aes(x = Length, y = Reads), 
+                      stat = "identity") + 
+             scale_y_continuous(labels = scales::comma) +
+             theme_bw() +
+             facet_grid(Alignment ~ .) +
+             ggtitle(str_glue(" Histogram of {.y} sample"))+
+             theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+         ) 
+dev.off()
+
+## pick only spike_ins----
+spike_reg_ex <- piRNAs_hist %>% 
+  filter(gene_type == "spike_in") %>%
+  .$gene_id %>% 
+  str_c(collapse = "|") %>% 
+  set_names("spike_ins")
+
+piRNA_reg_ex <- piRNAs_hist %>% 
+  filter(gene_type == "piRNA") %>% 
+  .$gene_id %>% 
+  str_c(collapse = "|") %>% 
+  set_names("piRNA")
+
+miRNA_reg_ex <- gtf_piB_RCentr %>% 
+  as_tibble() %>% 
+  filter(gene_type == "miRNA") %>% 
+  distinct(gene_id) %>% 
+  .$gene_id %>% 
+  str_c(collapse = "|") %>% 
+  set_names("miRNA")
+
+pdf(str_glue("histograms_spike_ins_reads_Salmon.pdf"))
+
+map(hist_files_salmon,~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
+  mutate(Length = as_factor(Length)) %>% 
+  filter(str_detect(sncRNA,spike_reg_ex)) %>%
+  group_by(Length) %>% 
+  summarise(Reads = sum(Reads)) %>% 
+  ggplot() +
+  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
+  scale_y_continuous(labels = scales::comma)+
+  theme_minimal()+
+  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","spike_ins"))
+)
+  dev.off()
+
+pdf(str_glue("histograms_piRNA_reads_FC_filtered.pdf"))
+
+map(hist_files_fc, ~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
+  mutate(Length = as_factor(Length)) %>% 
+  filter(str_detect(sncRNA,piRNA_reg_ex)) %>%
+  group_by(Length) %>% 
+  summarise(Reads = sum(Reads)) %>% 
+  ggplot() +
+  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
+  scale_y_continuous(labels = scales::comma)+
+  theme_minimal()+
+  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","piRNA"))
+)
+  dev.off()
+  
+pdf(str_glue("histograms_miRNA_reads_Salmon.pdf"))
+
+map(hist_files_salmon,~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
+  mutate(Length = as_factor(Length)) %>% 
+  filter(str_detect(sncRNA,miRNA_reg_ex)) %>%
+  group_by(Length) %>% 
+  summarise(Reads = sum(Reads)) %>% 
+  ggplot() +
+  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
+  scale_y_continuous(labels = scales::comma)+
+  theme_minimal()+
+  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","miRNA"))
+)
+  dev.off()
+  
+  
+pdf(str_glue("histograms_all_RNA_reads_Salmon.pdf"))
+
+map(hist_files_salmon,~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
+  mutate(Length = as_factor(Length)) %>% 
+  #filter(str_detect(sncRNA,miRNA_reg_ex)) %>%
+  group_by(Length) %>% 
+  summarise(Reads = sum(Reads)) %>% 
+  ggplot() +
+  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
+  scale_y_continuous(labels = scales::comma)+
+  theme_minimal()+
+  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","all_RNA"))+
+  coord_flip()
+)
+  dev.off()  
+
+  
+## piRNA reads ------
+reads_piRNA <- read_tsv("reads_piRNA.txt",
+                        col_names = c("Read","Length","sRNAs","read_sequence", "Sigar"))  
+
+reads_piRNA %>% count(Sigar)
+reads_piRNA %>% count(Length)
+
+piRNA_reads <- reads_piRNA %>% 
+  select(Read, sRNAs, read_sequence, Length) %>% 
+  separate(sRNAs, str_c("V",1:2), 
+           extra = "merge", fill = "right", sep = ",") %>% 
+  filter(is.na(V2)) %>% 
+  select(-V2) %>% 
+  filter(str_detect(V1, piRNA_reg_ex))
+
+piRNA_reads %>% 
+  mutate(Length = as_factor(Length)) %>% 
+  group_by(Length) %>% 
+  #summarise(Read) %>% 
+  ggplot() +
+  geom_bar(mapping = aes(x = Length))+
+  scale_y_continuous(labels = scales::comma)+
+  theme_minimal()+
+  ggtitle("COLO205_dil_A_NT_1_piRNA_reads" %>% basename %>% str_replace("allRNA.txt","all_RNA"))+
+  coord_flip()
+
+
+key_mIrna_pIrna <- gtf_piB_RCentr %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = T) %>% 
+  select(gene_id,seq_RNA,gene_type)
+
+test_mut_reads <- reads_piRNA %>% 
+  #head(1000) %>% 
+  filter(str_detect(sRNAs, miRNA_reg_ex)) %>% 
+  select(Read, sRNAs, read_sequence) %>% 
+  separate(sRNAs, str_c("V",1:12), 
+           extra = "merge", fill = "right", sep = ",") %>%
+  pivot_longer(cols = starts_with("V"), 
+               names_to = "alignment", values_to = "sRNAs", values_drop_na = T) %>% 
+  left_join(key_mIrna_pIrna, by = c("sRNAs" = "gene_id"))
+  
+test_mut_reads %>% filter(gene_type %in% c("miRNA", "piRNA")) 
+test_mut_reads %>% 
+  group_by(Read) %>% 
+
+# different way -----
+mutate_all(~replace(., is.na(.), "SS_22"))
+
+get_gene_type <- function(x){key_mIrna_pIrna %>% 
+  filter(gene_id== x) %>% 
+  .$seq_RNA}
+
+test_mut_reads %>% head %>% 
+  mutate_at(vars(starts_with("V")), ~map_chr(.,get_gene_type)) 
+
 ```
