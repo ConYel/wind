@@ -764,6 +764,11 @@ STAR --runMode genomeGenerate \
 --genomeDir my_data/human_data/indexes/GRCh38_v34_spike_ins_STAR \
 --genomeFastaFiles my_data/human_data/genome_sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.fasta --runThreadN 8 && cp Log.out my_data/human_data/indexes/GRCh38_v34_spike_ins_STAR/Log.out 
 
+# create the STAR index without  spike-ins
+STAR --runMode genomeGenerate \
+--genomeDir my_data/human_data/indexes/GRCh38_v34_public_STAR \
+--genomeFastaFiles my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa --runThreadN 8 && cp Log.out my_data/human_data/indexes/GRCh38_v34_public_STAR/Log.out
+
 # following the instructions for salmon decoy aware indexing
 # https://combine-lab.github.io/alevin-tutorial/2019/selective-alignment/
 grep "^>" my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa |cut -d " " -f 1 > my_data/human_data/decoys_GRCh38.txt

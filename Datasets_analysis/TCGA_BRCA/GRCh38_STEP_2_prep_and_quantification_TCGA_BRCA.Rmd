@@ -30,7 +30,7 @@ To obtain the data from TCGA we used a manifest with the selected samples and fo
 
 ### ii. BAM to FASTQ
 
-The acquired files were in BAM format but in order to perform the whole workflow we transformed them to FASTQ format.
+The acquired files were in BAM format, in order to perform the whole workflow we transformed them to FASTQ format.
 
 ```{bash bam2fq}
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
@@ -49,17 +49,12 @@ We perform quality control(QC) on the fastq files to get basic information about
 We work with the __[Fastqc](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)__ tool to perform QC.
 
 ```{bash preprocessing}
-mkdir -p my_data/Breast_Cancer_TCGA/qc_first
+ANALYSIS_FOLDER="my_data/Datasets_analysis/TCGA_BRCA"
 
-'fastqc' --threads 6 --outdir=my_data/Breast_Cancer_TCGA/qc_first/ my_data/myscratch/fastq_files/*.fastq.gz
+mkdir "${ANALYSIS_FOLDER}"/qc_before_trim \
+"${ANALYSIS_FOLDER}"/quants  "${ANALYSIS_FOLDER}"/star
 
-for file in my_data/myscratch/fastq_files/*.fastq.gz; 
-do ./spar_prepare/smrna_adapter_cut.sh $file 6; 
-done
-
-mkdir my_data/Breast_Cancer_TCGA/qc_after
-
-'fastqc' --threads 6 --outdir=my_data/Breast_Cancer_TCGA/qc_after/ my_data/myscratch/fastq_files/*.trimmed.fastq.gz
+'fastqc' --threads 9 --outdir=${ANALYSIS_FOLDER}/qc_before_trim "${ANALYSIS_FOLDER}"/downloaded_samples/*fastq.gz 
 
 exit
 ```
@@ -71,31 +66,33 @@ We will use a public docker image to run salmon
 ```{bash salmon}
 # run the docker
 docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
-
-# create the index
-salmon index -t ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.fa -i genome_transc_human/ncRNA_Central_piRNAB_hg38_index -k 15 -p 10
-
-mkdir my_data/smallRNA-breast-cancer/GSE129076/quants/
+ANALYSIS_FOLDER="my_data/Datasets_analysis/TCGA_BRCA"
 
 # run the samples
 
-#!/bin/bash
- 
-for fn in my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/fastq_files/*trimmed.fastq.gz;  
-do samp=`basename ${fn}`;  
-echo "Processing sample ${samp}";   
-salmon quant -i my_data/genome_
-transc_human/ncRNA_Central_piRNAB_hg38_index -l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 6 --validateMappings --writeMappings=my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/quants/${samp}.sam -o my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/quants/${samp}_quant;
-done
-
-#save as bam files
-for file in my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/quants/*.sam;
-do 
-regex="${file%%.sam}";
-echo "Processing sample ${regex}";   
-echo samtools view -O bam -o ${regex}.bam -@ 6 ${file};
+for fn in "${ANALYSIS_FOLDER}"/downloaded_samples/*.fastq.gz;   
+do  samp=`basename ${fn}`;   
+regex="${samp%%.fastq.gz}";   
+echo "Processing sample ${samp} start: $(date)";   
+salmon quant -i my_data/human_data/indexes/GRCh38_v34_public_salmon  \
+-l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 12 \
+--validateMappings --writeMappings="${ANALYSIS_FOLDER}/quants/${regex}.sam" \
+-o "${ANALYSIS_FOLDER}/quants/${regex}_quant"; 
+echo "end:$(date)";
 done
 exit
+
+docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
+#save as bam files
+for file in "${ANALYSIS_FOLDER}"/quants/*.sam;
+do 
+regex="${file%%.sam}";
+echo "Processing sample ${regex} start: $(date)"; 
+echo samtools view -O bam -o ${regex}.bam -@ 8 ${file};
+echo "end:$(date)";
+done
+# remove all .sam files
+rm ${ANALYSIS_FOLDER}/quants/*.sam
 ```
 ### Alignment and quantification of sequenced reads with STAR and featureCounts
 We use the __[STAR](https://github.com/alexdobin/STAR)__ aligner and then

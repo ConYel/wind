@@ -60,14 +60,6 @@ done
 'fastqc' --threads 6 --outdir="${ANALYSIS_FOLDER}"/qc_after_trim \
 "${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz
 
-for file in my_data/downloaded_SRA/GSE_samples/*.fastq.gz; 
-do ./spar_prepare/smrna_adapter_cut.sh $file 6; 
-done
-
-mkdir my_data/downloaded_SRA/GSE_samples/qc_after
-
-'fastqc' --threads 6 --outdir=my_data/qc_after/ my_data/downloaded_SRA/GSE_samples/*.trimmed.fastq.gz
-
 exit
 ```
 ## 2. Alignment and Quantification
