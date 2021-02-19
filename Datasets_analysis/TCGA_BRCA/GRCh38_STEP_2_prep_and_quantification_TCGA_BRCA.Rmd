@@ -94,28 +94,24 @@ done
 # remove all .sam files
 rm ${ANALYSIS_FOLDER}/quants/*.sam
 ```
-### Alignment and quantification of sequenced reads with STAR and featureCounts
-We use the __[STAR](https://github.com/alexdobin/STAR)__ aligner and then
-perform quantification with featureCounts from __[Rsubread](https://www.bioconductor.org/packages/release/bioc/html/Rsubread.html)__ package.
-With the docker image that contains STAR and __[Samtools](https://www.htslib.org/)__
-we get sorted BAM files and use them for quantification/annotation for smallRNAs.
-
 ### ii. Alignment with STAR
+We use the __[STAR](https://github.com/alexdobin/STAR)__ aligner and then
+perform quantification with featureCounts of __[Rsubread](https://www.bioconductor.org/packages/release/bioc/html/Rsubread.html)__ package.
+
 ```{bash STAR}
-# run docker
-docker run --rm -ti -v "$PWD":/home/my_data congelos/sncrna_workflow
-
-# index generation
-STAR --runMode genomeGenerate --genomeDir my_data/human_data/GRCh38 --genomeFastaFiles my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa --runThreadN 6
-
-mkdir my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/star_results
-
-# alignment
-for file in my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/fastq_files/*.trimmed.fastq.gz;  
-do samp=`basename ${file}`; 
-regex="${samp%%.trimmed.fastq.gz}"; 
+for file in  "${ANALYSIS_FOLDER}"/downloaded_samples/*.fastq.gz; 
+do 
+samp=`basename ${file}`; 
+regex="${samp%%.fastq.gz}"; 
 echo "Processing sample ${samp} start: $(date)"; 
-STAR --genomeDir my_data/genome_transc_human/human_data/GRCh38_2_7_4a --genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat --runThreadN 6 --alignIntronMax 1 --outSAMattributes NH HI NM MD --outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate --limitBAMsortRAM 40000000000 --outReadsUnmapped Fastx --outFilterMismatchNmax 1 --outFilterMatchNmin 14 --outFileNamePrefix "my_data/smallRNA-breast-cancer/Breast_Cancer_TCGA/star_results/${regex}_align/${regex}_";  echo "end:$(date)";
+STAR --genomeDir my_data/human_data/indexes/GRCh38_v34_public_STAR \
+--genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat \
+--runThreadN 6 --alignIntronMax 1 --outSAMattributes NH HI NM MD \
+--outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate \
+--limitBAMsortRAM 40000000000 --outReadsUnmapped Fastx \
+--outFilterMismatchNmax 1 --outFilterMatchNmin 14 \
+--outFileNamePrefix "${ANALYSIS_FOLDER}/star/${regex}_align/${regex}_";  
+echo "end:$(date)";
 done
 
 exit
