@@ -45,19 +45,19 @@ todate <- format(Sys.time(), "%d_%b_%Y")
 ### ii. Make the directory for the results of the exploratory data analysis
 
 ```{r make dirs}
-my_basename <- "GSE68246" ## INPUT name of the folder
-my_exp <- "br_CSC_cancer" ## INPUT name of the analysis
-genome_input <- "hg38" ## INPUT genome version here
-my_exp_sal <- "salmon"
-my_exp_fc <- "featureCounts"
-dat_path <- str_glue("{my_basename}/ExpDatAnalysis_{my_exp}_{genome_input}_{todate}/{c(my_exp_sal,my_exp_fc)}")
-dat_path %>% map(~dir.create(str_glue("./{.x}"), recursive = TRUE))
+my_basename <- file.path("Datasets_analysis", "TCGA_BRCA") ## INPUT name of the main folder 
+my_exp <- "Breast_Cancer_TCGA" ## INPUT name of the analysis
+genome_input <- "GRCh38" ## INPUT genome version here
+my_tools <- c("salmon","featureCounts")
+dat_path <- file.path(my_basename, str_glue("EDA_{my_exp}_{genome_input}_{todate}"),
+                      my_tools)
+dat_path %>% map(~dir.create(., recursive = TRUE))
 ```
 ## 3. Import the salmon files
 
 ```{r import salmon}
 # load salmon files----
-files_salm <- list.files(path = my_basename,pattern = ".sf",
+files_salm <- list.files(path = my_basename, pattern = ".sf",
   recursive = TRUE, full.names = TRUE)
 
 names(files_salm) <- files_salm %>%
@@ -67,40 +67,13 @@ names(files_salm) <- files_salm %>%
 txi <- tximport::tximport(files_salm, type = "salmon",
   txOut = TRUE, countsFromAbundance = "lengthScaledTPM")
 ```
-## 4. Make or import the targets file.
+## 4. Make the targets file.
 
-If you use a public dataset you can download it from SRA RUN selector Metadata
-or you can create it.
-It has to have at least three columns with the column names: "sample_name","group","batch"
-Here we show both ways although we need to manipulate some columns in the
-metadata of SRA run selector.
+In order to create a "targets" file for the downstream analysis we can use the 
+Sample Type Codes in the following link from NIH, [Genomic Data Commons](https://gdc.cancer.gov/resources-tcga-users/tcga-code-tables/sample-type-codes)
 
 ```{r targets file}
-# INPUT targets file
-## table for GSE68246
-targ_path <- dir( path = my_basename, 
-                  pattern = "Sra",
-                  full.names = T,
-                  recursive = TRUE)
-
-targets_file <- read_csv(targ_path) %>% 
-  select(Run, source_name, sample_name=`Sample Name`) %>%
-  distinct(source_name, sample_name) %>% 
-  mutate(
-    group = source_name %>% str_replace("MCF-7 ","MCF_7_"),    
-    batch = rep(1:3,2) ) %>% 
-  mutate_all(as_factor) %>% 
-  select(-source_name)
-
 # make the table from scratch-----
-## table for GSE68246
-targets_file <- tibble( 
-  file_name = files_salm,
-  sample_name = names(files_salm),
-  group = as_factor(c(rep("MCF_7_Monolayer",3),rep("MCF_7_Spheroid",3))),
-  batch = as_factor(rep(1:3,2))
-)
-## table for TCGA_BRCA
 targets_file <- tibble(
   file_name = files_salm,
   sample_name = names(files_salm),
@@ -111,26 +84,15 @@ targets_file <- tibble(
     str_remove(".{8}") %>% 
     str_remove("-.+") %>% 
     as_factor() ) %>%
-  mutate(group = as_factor(case_when(
+  mutate(group = as_factor(
+    case_when(
     group == "01" ~ "Primary_Solid_Tumor",
      group == "11" ~ "Solid_Tissue_Normal"
-  ))) 
-
-# remake targets file TCGA
-targets_file <- tibble(   ## INPUT targets file here
-  file_name = files_salm,
-  sample_name = names(files_salm),
-  group = names(files_salm) %>% 
-    str_remove(".{13}") %>% 
-    str_remove("[:alpha:]?-.+"),
-  batch = names(files_salm) %>% 
-    str_remove(".{8}") %>% 
-    str_remove("-.+") %>% 
-    as_factor() ) %>% 
-  mutate(group = as_factor(case_when(
-    group == "01" ~ "Primary_Solid_Tumor",
-     group == "11" ~ "Solid_Tissue_Normal"
-  )))  
+  )),
+  sample_new_id = str_c(str_remove(group,"ary.+|_T.+"),
+                        "_",
+                        str_remove(batch,"^[:alnum:]{2}"))
+  ) 
 ```
 ## 5. Make a DGElist object for salmon
 
@@ -140,6 +102,11 @@ targets_file <- tibble(   ## INPUT targets file here
 # we follow the instructions to import for edgeR 
 cts <- txi$counts
 normMat <- txi$length
+
+# change the colnames of the salmon objects
+identical(as.character(targets_file$sample_name),colnames(cts))
+colnames(cts) <- targets_file$sample_new_id
+colnames(normMat) <- targets_file$sample_new_id
 
 # Obtaining per-observation scaling factors for length, adjusted to avoid
 # changing the magnitude of the counts
@@ -158,7 +125,7 @@ normMat <- log(normMat)
 # Creating a DGEList object for use in edgeR.
 dgl_salmon <- DGEList(cts, samples = targets_file) %>% 
   scaleOffset( normMat) %>% 
-  write_rds(str_glue("{dat_path[1]}/dgl_edgeR_salmon.rds"))
+  write_rds(file.path(dat_path[1],"dgl_edgeR_salmon.rds"))
 # remove objects.
 rm(cts, normCts, normMat, txi)
 ```
@@ -167,33 +134,42 @@ rm(cts, normCts, normMat, txi)
 ```{r DGElist FeatureCounts}
 # load the rds from featureCOunts----
 #INPUT rds featureCOunts
-fc <- list.files(path = my_basename, recursive = TRUE, 
-  pattern = ".+counts.+.rds", 
-  full.names = TRUE) %>% 
+fc <- list.files(path = my_basename,
+                 pattern = ".+counts.+.rds", 
+                 full.names = TRUE) %>% 
   read_rds()
 
-# write the matrix for the analysis, annotation stats-----
-colnames(fc$counts) <- targets_file$sample_name
+# change the names of the samples to more compact -----
+colnames(fc$counts) <- as.character(targets_file$sample_new_id)
+colnames(fc$stat) <-c("Status", as.character(targets_file$sample_new_id))
 
-fc$counts %>% as_tibble(rownames = "sRNA") %>% 
-  write_tsv(str_glue("{dat_path[2]}/raw_reads_fc.txt"))
+# write the matrix for the analysis, annotation stats-----
+fc$counts %>% 
+  as_tibble(rownames = "sRNA") %>% 
+  write_tsv(file.path(dat_path[2], "raw_reads_fc.txt"))
+
 fc$annotation %>% 
   as_tibble() %>% 
-  write_tsv(str_glue("{dat_path[2]}/annotation_fc.txt"))
+  write_tsv(file.path(dat_path[2],"annotation_fc.txt"))
+
 fc$stat %>% 
   as_tibble() %>% 
-  write_tsv(str_glue("{dat_path[2]}/stats_fc.txt"))
+  write_tsv(file.path(dat_path[2],"stats_fc.txt"))
+
 dgl_fc <- DGEList(counts = fc$counts,
                samples = targets_file,
                lib.size = colSums(fc$counts),
                norm.factors = rep(1,ncol(fc$counts)))
 
 # give colours to samples ----
-pal1 <- tibble(value = c("#E50B36","#D2CA1D", "#79402E","#FF0000",
-  "#D8B70A","#02401B","#046C9A","#5B1A18")) %>%
+pal1 <- tibble(value = c('#e41a1c','#377eb8',
+                         '#4daf4a','#984ea3',
+                         '#ff7f00','#ffff33',
+                         '#a65628','#f781bf')) %>%
   dplyr::slice(1:length(levels(as_factor(targets_file$group)))) %>%
   mutate(
     group = as_factor(levels(as_factor(targets_file$group))))
+
 dgl_fc$colours <- as_factor(inner_join(dgl_fc$samples, pal1,by= "group")$value)
 
 # remove objects ----
@@ -212,11 +188,11 @@ function_Noiseq_plots <- function(exp_data, plot_path){
   factors = as.data.frame(targets_file),
   biotype = mybiotypes)
   mybiodetection <- dat(mydata, k = 0, type = "biodetection")
-  pdf(str_glue("{plot_path}/NOISeq_biodetection_exprs_{todate}_{str_remove(plot_path,'.+/')}.pdf"))
+  pdf(file.path(plot_path, str_glue("NOISeq_biodetection_{todate}_{basename(plot_path)}.pdf")))
   seq(ncol(exp_data)) %>% map(~explo.plot(mybiodetection, samples = .x),plottype = "boxplot")
   dev.off()
   mycountsbio <- dat(mydata, factor = NULL, type = "countsbio")
-  pdf(str_glue("{plot_path}/NOISeq_countsbio_{todate}_{str_remove(plot_path,'.+/')}.pdf"))
+  pdf(file.path(plot_path, str_glue("NOISeq_countsbio_{todate}_{basename(plot_path)}.pdf")))
   seq(ncol(exp_data)) %>% map(~explo.plot(mycountsbio, 
     samples = .x ,plottype = "boxplot"))
   dev.off()
@@ -231,12 +207,12 @@ list( "salmon" = dgl_salmon$counts, "fc" = fc$counts) %>%
 design <- model.matrix(~0 + targets_file$group)
 colnames(design) <- colnames(design) %>% 
   str_remove("targets_file\\$group") 
-rownames(design) <- targets_file$sample_name
+rownames(design) <- targets_file$sample_new_id
 design_2 <- model.matrix(~0 + targets_file$group + targets_file$batch)
 colnames(design_2) <- colnames(design_2) %>% 
   str_remove("targets_file\\$group") %>% 
   str_remove("targets_file\\$batch")
-rownames(design_2) <- targets_file$sample_name
+rownames(design_2) <- targets_file$sample_new_id
 ```
 ## 9. Perform various Filtering Methods: EdgeR, NOIseq
 
@@ -245,7 +221,7 @@ function_filtering <- function(dgl_data, data_path){
   # filtering with NOISEq  -----
   noifil <- list("cpm" = 1L, "Prop" = 3L) %>%
     map(~NOISeq::filtered.data(dgl_data$counts,
-      factor = targets_file$group,
+      factor = dgl_data$samples$group,
       norm = FALSE,
       method = .x, cv.cutoff = 100, cpm = 1)
   )
@@ -254,16 +230,17 @@ function_filtering <- function(dgl_data, data_path){
     names %>% 
     map( ~ dgl_data[rownames(dgl_data$counts) %in%
       rownames(noifil[.x]),,keep.lib.sizes = FALSE] %>% 
-        write_rds(str_glue("{data_path}/dgl_{.x}_filt_{str_remove(data_path,'.+/')}.rds"))
+        write_rds(file.path(data_path, str_glue("dgl_{.x}_filt_{basename(data_path)}.rds")))
       )
-  # filterwith EdgeR ----
+  # filter with EdgeR ----
   keep.exprs <- filterByExpr.DGEList(dgl_data, design = design)
   keep.exprs_2 <- filterByExpr.DGEList(dgl_data, design = design_2)
   dgl_filt <- dgl_data[keep.exprs,,keep.lib.sizes=FALSE] %>% 
-    write_rds(str_glue("{data_path}/dgl_filt_nobatch_{str_remove(data_path,'.+/')}.rds"))
+    write_rds(file.path(data_path, str_glue("dgl_edger_filt_nobatch_{basename(data_path)}.rds")))
   dgl_filt_2 <- dgl_data[keep.exprs_2,,keep.lib.sizes=FALSE] %>% 
-    write_rds(str_glue("{data_path}/dgl_filt_batch_{str_remove(data_path,'.+/')}.rds"))
+    write_rds(file.path(data_path,str_glue("dgl_edger_filt_batch_{basename(data_path)}.rds")))
   
+  # objects for the creation of filtering info table
   features_NOIS <- map(noifil, ~ .x %>%
       rownames() %>%
       enframe(name = NULL)) 
@@ -293,7 +270,7 @@ function_filtering <- function(dgl_data, data_path){
       nrow(common_edgeR_nobatch[[2]]),nrow(common_edgeR_batch[[2]])
     )
   ) %>% 
-    write_tsv(str_glue("{data_path}/filtering_info_{str_remove(data_path,'.+/')}.txt"))
+    write_tsv(file.path(data_path, str_glue("filtering_info_{basename(data_path)}.txt")))
   dgl_filt
 }
 
@@ -306,7 +283,7 @@ filtered_dgls <- list("salmon" = dgl_salmon, "fc" = dgl_fc) %>%
 function_hist <- function(dgl_data, dgl_fil_data, plot_path){
   AveLogCpm_Raw_Data <- aveLogCPM(dgl_data)
   AveLogCpm_Filtered_Data <-aveLogCPM(dgl_fil_data)
-  pdf(str_glue("{plot_path}/histogram_plot_{todate}_{str_remove(plot_path,'.+/')}.pdf"))
+  pdf(file.path(plot_path, str_glue("histogram_plot_{todate}_{basename(plot_path)}.pdf")))
   hist(AveLogCpm_Raw_Data)
   hist(AveLogCpm_Filtered_Data)
 dev.off()
@@ -336,18 +313,18 @@ function_norm <- function(dgl_fil_data, data_path){
     set_names(.)
   edger_norm <- map(norm_method, ~calcNormFactors(dgl_fil_data, method = .x))
   # limma-voom  ----
-  pdf(str_glue("{data_path}/voom_plots_{str_remove(data_path,'.+/')}.pdf"))
+  pdf(file.path(data_path,str_glue("voom_plots_{basename(data_path)}.pdf")))
   voom_norm <-  edger_norm[1:3] %>% 
     map2(.y = c("quantile", rep("none",2)),
-      ~voom(.x, design = design,
+      ~voom(.x, design = design_2,
         plot = TRUE, normalize.method = .y)) %>% 
     set_names("voom_Quantile","voom_TMM","voom_TMMwsp")
   dev.off()
   # limma-voom with quality weights ----
-  pdf(str_glue("{data_path}/voom_quality_weights_plots_{str_remove(data_path,'.+/')}.pdf"))
+  pdf(file.path(data_path,str_glue("voom_quality_weights_plots_{basename(data_path)}.pdf")))
   voom_norm_QW <- edger_norm[1:3] %>% 
     map2(.y = c("quantile", rep("none",2)),
-      ~voomWithQualityWeights(.x, design = design,
+      ~voomWithQualityWeights(.x, design = design_2,
         plot = TRUE, normalize.method = .y)) %>% 
     set_names("voomQW_Quantile","voomQW_TMM","voomQW_TMMwsp")
   dev.off()
@@ -360,22 +337,21 @@ function_norm <- function(dgl_fil_data, data_path){
     "voomQW_Quantile" = 2^voom_norm_QW[[1]]$E,
     "voomQW_TMM" = 2^voom_norm_QW[[2]]$E,
     "voomQW_TMMwsp" = 2^voom_norm_QW[[3]]$E))
-  pdf(str_glue("{data_path}/RLE_plots_{str_remove(data_path,'.+/')}.pdf"))
+  pdf(file.path(data_path, str_glue("RLE_plots_{basename(data_path)}.pdf")))
   norm_list %>%
     imap(~function_EDA_RLE(.x,.y))
   dev.off()
   norm_list[2:4] %>% imap(~.x %>% 
-      as_tibble(rownames = "GeneIDs") %>% write_tsv(path = 
-       str_glue("{data_path}/norm_cpm_{.y}_{str_remove(data_path,'.+/')}.txt")))
+      as_tibble(rownames = "GeneIDs") %>% 
+        write_tsv(file = file.path(data_path, str_glue("norm_cpm_{.y}_{basename(data_path)}.txt"))))
   c(edger_norm, voom_norm, voom_norm_QW)
 }
 
 norm_dgls <- filtered_dgls %>%
   map2(.y = dat_path, ~function_norm(.x, .y))
 # save the list with all normalized values (edgeR and limma-voom)-----
-norm_dgls %>%
-  map2( .y = dat_path, 
-    ~write_rds(.x,file = str_glue("{.y}/list_norm_dgls_{str_remove(.y,'.+/')}.rds")))
+  do_not_print <- map2( .x = norm_dgls, .y = dat_path, 
+    ~write_rds(.x, file = file.path(.y, str_glue("list_norm_dgls_{basename(.y)}.rds"))))
 ```
 ## 12. Make h-clustering
 
@@ -396,7 +372,7 @@ function_clust <- function(dgl_norm_data, plot_path){
   #pheatmap start
   list_distc_mat <- list_distc  %>% map(~as.matrix(.x))
   colours_pheat <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
-  pdf(str_glue("{plot_path}/distance_matrix_hclust_{str_remove(plot_path,'.+/')}.pdf"))
+  pdf(file.path(plot_path, str_glue("distance_matrix_hclust_{basename(plot_path)}.pdf")))
   list_distc_mat %>% imap(~pheatmap(.x,
            clustering_distance_rows = "euclidean",
            clustering_distance_cols = "euclidean",
@@ -408,7 +384,7 @@ function_clust <- function(dgl_norm_data, plot_path){
   list_hc <- sapply(hc_methods, function(x) map(list_distc, ~hclust(.x,method = x)))
   names(list_hc) <- rep(rownames(list_hc),times = ncol(list_hc))
   
-  pdf(str_glue("{plot_path}/hierarchic_clust_{str_remove(plot_path,'.+/')}.pdf"))
+  pdf(file.path(plot_path, str_glue("hierarchic_clust_{basename(plot_path)}.pdf")))
   for (i in seq_along(list_hc)) {
        rafalib::myplclust(list_hc[[i]],
        lab.col = as.character(dgl_fc$colours),  
@@ -430,7 +406,7 @@ map2(norm_dgls, dat_path, ~function_clust(.x,.y))
 ```{r MDS plot}
 function_MDS <- function(dgl_norm_data, plot_path){
   par(mar=c(6,5,2,1)+ 0.1)
-  pdf(str_glue("{plot_path}/MDS_plot_{str_remove(plot_path,'.+/')}.pdf"))
+  pdf(file.path(plot_path, str_glue("MDS_plot_{basename(plot_path)}.pdf")))
   plotMDS(dgl_norm_data$TMM, 
           labels = dgl_fc$samples$sample_name,
           pch = 10,
@@ -459,7 +435,7 @@ map2(norm_dgls, dat_path, ~function_MDS(.x,.y))
 ## https://github.com/mikelove/DESeq2/blob/master/R/plots.R
 
 function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 500){
-  library(DESeq2)
+  suppressPackageStartupMessages(library(DESeq2))
   # calculate the variance for each gene
   rv <- rowVars(dgl_norm_data[[norm_method]]$counts)
   
@@ -505,7 +481,7 @@ function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 5
   
   # pdf
   par(mar=c(6,5,2,1)+ 0.1)
-  pdf(str_glue("{plot_path}/PCA_plot_{norm_method}_{str_remove(plot_path,'.+/')}.pdf"))
+  pdf(file.path(plot_path, str_glue("PCA_plot_{norm_method}_{basename(plot_path)}.pdf")))
   print(p)
   dev.off()
 }
@@ -528,33 +504,39 @@ function_comp_groups <- function(dgl_norm_data, tool){
 
 comp_FC_sal <- map2(norm_dgls, list("_salmon", "_fc"), ~function_comp_groups(.x,.y))
 
-#comp_FC_sal <- map2(list("salmon" = norm_dgls_sal, "FC" = norm_dgls_FC),
-#  list("_salmon", "_FC"), ~function_comp_groups(.x,.y))
+annot_tbl <- file.path("human_data","sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
+  read_gff2()
 
-#comp_FC_sal$salmon %>% 
-#  inner_join(comp_FC_sal$fc, by = "sncRNA") %>% 
-#  write_tsv(str_glue("{str_remove(dat_path[1],'/.+')}/salmon_FC_1cpm_common_grouped.txt"))
+complete_biotypes_seqs <- annot_tbl %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = TRUE) %>% 
+  select(!c(seqnames:strand,type:phase)) %>% 
+  dplyr::rename("sncRNA" = gene_id)
 
-salmon_FC_cpm_union_grouped <- comp_FC_sal$salmon %>% 
-  left_join(mybiotypes %>% as_tibble(rownames="sncRNA")) %>% 
-  full_join(comp_FC_sal$fc, by = "sncRNA") %>% 
+salmon_FC_cpm_union_grouped <- comp_FC_sal %>% 
+  bind_rows() %>% 
+  left_join(complete_biotypes_seqs) %>%
   select(sncRNA, gene_type, everything()) %>% 
-  write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/salmon_FC_cpm_union_grouped.txt"))
+  write_tsv(file.path(dirname(dat_path[1]), "salmon_FC_cpm_union_grouped.txt"))
 
-# piCK the 100 top expressed molecules between FC salmon and all groups -----
-all_exprs_cpm_TMM <- list.files(recursive = T , 
-           pattern = "norm_cpm_TMM_", 
-           full.names = T) %>% 
+# piCK the top 100 expressed piRNAs between FC salmon and all groups -----
+all_exprs_cpm_TMM <- dat_path %>% 
+  map(~list.files(path = .x, 
+                  recursive = TRUE ,
+                  pattern = "norm_cpm_TMM_",
+                  full.names = T)) %>% 
   vroom::vroom(id = "method") %>% 
   mutate(method = method %>% basename() %>% str_remove("norm_cpm_TMM_") %>% str_remove(".txt"))
 
 salmon_FC_cpm_union_grouped_top <- salmon_FC_cpm_union_grouped %>% 
-  filter(gene_type == "piRNA") %>% 
+  filter(str_detect(gene_type, "piRNA")) %>% 
   arrange(across(.fns = dplyr::desc,
                  .cols = ends_with(c("salmon","fc")))) %>% 
+  group_by(gene_type) %>% 
   slice_head(n = 100) 
 
-  all_exprs_cpm_TMM %>% 
+all_exprs_cpm_TMM %>%
+  filter(GeneIDs %in% salmon_FC_cpm_union_grouped_top$sncRNA) %>% 
   mutate(method = if_else(method == "featureCounts", 
                           true = "fc", 
                           false = "salmon")) %>%
@@ -562,14 +544,13 @@ salmon_FC_cpm_union_grouped_top <- salmon_FC_cpm_union_grouped %>%
     unite(col = "sample",c(name, method)) %>%
   pivot_wider(names_from = "sample", 
               values_from = "value") %>% 
-  column_to_rownames("GeneIDs") %>% 
-  .[salmon_FC_cpm_union_grouped_top$sncRNA,] %>% 
-  as_tibble(rownames = "smallRNA") %>% write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/salmon_FC_cpm_union_top100.txt"))
+  write_tsv(file.path(dirname(dat_path[1]),"salmon_FC_cpm_union_top100.txt"))
 ```
 ## 16. Make histogram of length
 
 ```{r histogram of seq length}
-annot_tbl <- read_gff2("../genome_transc_human/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
+annot_tbl <- file.path("human_data","sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
+  read_gff2() %>% 
   as_tibble %>%
   select(-c(type, score, phase)) %>% 
   dplyr::rename("length_w" = width)
@@ -603,7 +584,7 @@ smallRNA_seqs[["salmon"]]  %>%
     anti_join(smallRNA_seqs[["fc"]]) %>% 
     dplyr::count(gene_type, sort = T) %>% 
     dplyr::rename("unique_salmon_n" = n)) %>% 
-  write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/stats_gene_types_ids.txt"))
+  write_tsv(file.path(dirname(dat_path[1]), "stats_gene_types_ids.txt"))
 
 # per group summary ----
 groups <- targets_file$group %>% levels() %>% set_names()
@@ -634,7 +615,7 @@ FC_groups <- groups %>% map(~comp_FC_sal$fc %>%
     ) %>% select(-name)
 
 ## histograms ----
-pdf(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/length_histogram.pdf"))
+pdf(file.path(dirname(dat_path[1]),"length_histogram.pdf"))
 map(FC_groups$gene_type %>% as_factor() %>% levels(), 
   ~salmon_groups %>% 
   full_join(FC_groups, 
@@ -662,7 +643,7 @@ dev.off()
 # sequences logos -----
 library(ggseqlogo)
 
-pdf(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/piRNA_logos_FC_salmon.pdf"))
+pdf(file.path(dirname(dat_path[1]), "piRNA_logos_FC_salmon.pdf"))
 #salmon
 groups %>% map2(list(salmon_groups),
   ~.y %>% 
@@ -683,341 +664,8 @@ groups %>% map2(list(FC_groups),
   ggtitle(str_glue("FeatureCounts_{.x}")))  
 dev.off()
 ```
-## 18. Reads info and histograms
-### i. extract the information of length for reads
-Here we need to collapse the  information that it can be extracted from the bam files
-of aligned reads, we use the docker of sncrna_workflow to perform it.
-```{bash Reads info}
-## filter for reads of 15-49 bases
-for file in my_data/star_results/*/*_sorted.bam; 
-do
-where_to_save=`dirname ${file}`; 
-regex=`basename ${file}`; 
-samp="${regex%%.trimmed_sorted.bam}"; 
-echo "Processing sample ${samp} start: $(date)";  
-samtools view -h -@ 6 ${file} | awk 'length($10) > 14 && length($10) < 50 || $1 ~ /^@/' | samtools view -bS - >  ${where_to_save}/${samp}_filt_15_49_sorted.bam;
-echo "end:$(date)"; 
-done
 
-## find length of reads from STAR - featureCounts
-#cut -f1 my_data/piRNAs_hist.txt > my_data/piRNA_ids.txt | grep -F -w -f my_data/piRNA_ids.txt  -
-
-for file in my_data/spike_ins/star_results/*.featureCounts.bam; 
-do
-where_to_save=`dirname ${file}`; 
-regex=`basename ${file}`; 
-samp="${regex%%.trimmed_sorted.bam.featureCounts.bam}"; 
-echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/${samp}_hist.txt";  
-samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$18}'| sed 's/XT:Z://g'  | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist.txt;
-echo "end:$(date)"; 
-done
-
-## find length of reads from salmon
-for file in my_data/quants/*.fastq.gz.bam;  
-do 
-where_to_save=`dirname ${file}`;  
-regex=`basename ${file}`;  
-samp="${regex%%.trimmed*}";  
-echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/${samp}_hist_allRNA.txt"; 
-samtools view  -@ 2 ${file} | awk 'BEGIN{FS=OFS="\t"}{print $1,length($10),$3}'| sort -k1,1 | bedtools groupby -g 1 -c 2,3 -o first,distinct -delim "," | cut -f2,3 | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_allRNA.txt; 
-echo "end:$(date)"; 
-done
-
-## if it was to make only for piRNA
-samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$3}'| grep -F -w -f my_data/piRNA_ids.txt  - | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_pirna.txt;
-
-```
-### ii. make a txt file with the info
-here we return to the Rstudio docker in order to perform the visualization
-
-```{r}
-library(tidyverse)
-hist_all_RNA <- list.files(path = "../genome_transc_human/quants", 
-                           pattern = "hist_allRNA.txt", 
-                           full.names = T) %>% 
-  vroom::vroom(id = "file", col_names = c("read_count", "read_length", "smallRNA")) %>% 
-  mutate(file = basename(file) %>% str_remove("_hist_all.+"))
-  
-```
-### iii. ggplot for histograms
-
-```{r ggplots hist reads}
-library(tidyverse)
-library(plyranges)
-#piRNAs_hist <- read_tsv("piRNAs_hist.txt")
-#  gtf_piB_RCentr <- read_gff2("mouse_data/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_mm10.gtf") %>% 
-  as_tibble() %>% 
-  select(gene_id,gene_type) %>% 
-  distinct(gene_id, .keep_all = T) %>% 
-    mutate(gene_type = as_factor(gene_type))
-# featureCounts(FC) and salmon files -------
-hist_files_fc <- list.files(path ="mouse_datasets/star_results",
-                         pattern = "_hist.txt", 
-                         recursive = TRUE, full.names = TRUE) %>% 
-    set_names(. %>% 
-                basename() %>%
-                str_remove("_hist.txt")
-              )
-
-hist_files_salmon <- list.files(path ="mouse_datasets/quants",
-                         pattern = "_hist_allRNA.txt", 
-                         recursive = TRUE, full.names = TRUE) %>% 
-    set_names(. %>% 
-                basename() %>%
-                str_remove("_hist_allRNA.txt")
-              )
-#FC reads info----
-## add the regex of smallRNA names
-smallRNA_Categ_regex <- levels(gtf_piB_RCentr$gene_type) %>% 
-  set_names(.) %>% 
-  map(~gtf_piB_RCentr %>%  
-  filter(gene_type == .x) %>% 
-  .$gene_id %>% 
-  str_c(collapse = "|")) %>% 
-  c(.,"Not_assigned" = "Not_assigned")
-
-## function to filter a df of mappeds reads per small RNA category using regex
-
-reads_info_fc <- function(df, Categ_regex_list){
-  Categ_regex_list %>% #regex with rna_names "mmu_piR_039595|mmu_piR_039148"
-    imap(~df %>% # for each category summarise the reads
-           filter(str_detect(sncRNA,.x)) %>%
-           summarise(!!str_c(.y,"_Reads"):= sum(Reads)) %>%
-           add_column(Category = "Reads")
-         ) %>%
-    purrr::reduce(left_join) %>% 
-    left_join(df %>% 
-                filter(Alignment!="Not_assigned") %>% 
-                group_by(Alignment) %>% 
-                summarise(S=sum(Reads)) %>%
-                mutate( Category = "Reads") %>%  
-                pivot_wider(names_from = Alignment, values_from = S)) %>% 
-    mutate(Reads_in_analysis = Not_assigned_Reads + Multimapped + Unique, 
-      Mapped_Reads = Multimapped + Unique, 
-      Mapped_Reads_perc = 
-        as.character(round((Mapped_Reads/Reads_in_analysis)*100, digits = 2)) %>%
-        str_c(.,"%")) %>% 
-         select(Category, Reads_in_analysis, Mapped_Reads, 
-                Mapped_Reads_perc,
-                Unique,
-                Multimapped,
-                Not_assigned_Reads, everything())
-}
-
-
-## read the hist files and add information about multi-mapped reads  
-df_list <- hist_files_fc %>% 
-  map(~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
-  mutate(Length = as_factor(Length),
-         sncRNA = if_else(is.na(sncRNA),"Not_assigned",sncRNA),
-         Alignment = case_when(
-           sncRNA == "Not_assigned" ~ "Not_assigned",
-           str_detect(sncRNA, ",") ~"Multimapped" ,
-           TRUE ~ "Unique" )
-         )
-  )
-
-## create the data
-FC_reads_info <- df_list %>% 
-  imap(~reads_info_fc(.x, smallRNA_Categ_regex) %>% 
-         mutate(Category = .y)) %>% 
-  purrr::reduce(bind_rows)
- 
-
-dgl_norm$featureCounts$TMM$counts %>% 
-  as_tibble(rownames = "smallRNA") %>% 
-  filter(smallRNA %in% annot_tbl$gene_id) %>% # annot_tbl <- gtf_piB_RCentr %>% filter(gene_type =="piRNA")
-  pivot_longer(-smallRNA) %>% 
-  mutate(piRNA = if_else(value > 0,1,0)) %>% 
-  group_by(name) %>% 
-  summarise(piRNAs_in_sample =sum(piRNA)) %>% 
-  dplyr::rename(Category = name) %>% 
-  left_join(FC_reads_info) %>% # save them on a txt
-write_tsv("mouse_datasets/FC_reads_info.txt")
-
-# featureCounts histograms of piRNAs------
-piRNA_DF_hist<- df_list %>% 
-  bind_rows(.id = "Sample") %>% 
-  filter(sncRNA != "Not_assigned") %>% 
-  filter(str_detect(sncRNA, smallRNA_Categ_regex[["piRNA"]]))
-
-#FC reads hist piRNA----
-piRNA_DF_hist %>% 
-   group_by(Sample, Length, Alignment) %>%
-   summarise(Reads = sum(Reads)) %>%
-   ggplot() +
-   geom_bar(mapping = 
-              aes(x = Length, 
-                  y = Reads, 
-                  fill = Alignment),
-            stat = "identity") + 
-   scale_y_continuous(labels = scales::comma) +
-   coord_cartesian(ylim = c(0,2000000))+
-   theme_bw() +
-   facet_wrap(~Sample, ncol = 3) +
-   
-   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
-
-pdf(str_glue("mouse_datasets/histograms_piRNA_reads_facets_fc.pdf"))
-df_list %>% imap(~.x %>%
-           filter(str_detect(sncRNA, smallRNA_Categ_regex[["piRNA"]])) %>%
-           group_by(Length,Alignment) %>%
-           summarise(Reads = sum(Reads)) %>%
-           ggplot() +
-             geom_bar(mapping = aes(x = Length, y = Reads), 
-                      stat = "identity") + 
-             scale_y_continuous(labels = scales::comma) +
-             theme_bw() +
-             facet_grid(Alignment ~ .) +
-             ggtitle(str_glue(" Histogram of {.y} sample"))+
-             theme(plot.title = element_text(hjust = 0.5),
-        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
-         ) 
-dev.off()
-
-## pick only spike_ins----
-spike_reg_ex <- piRNAs_hist %>% 
-  filter(gene_type == "spike_in") %>%
-  .$gene_id %>% 
-  str_c(collapse = "|") %>% 
-  set_names("spike_ins")
-
-piRNA_reg_ex <- piRNAs_hist %>% 
-  filter(gene_type == "piRNA") %>% 
-  .$gene_id %>% 
-  str_c(collapse = "|") %>% 
-  set_names("piRNA")
-
-miRNA_reg_ex <- gtf_piB_RCentr %>% 
-  as_tibble() %>% 
-  filter(gene_type == "miRNA") %>% 
-  distinct(gene_id) %>% 
-  .$gene_id %>% 
-  str_c(collapse = "|") %>% 
-  set_names("miRNA")
-
-pdf(str_glue("histograms_spike_ins_reads_Salmon.pdf"))
-
-map(hist_files_salmon,~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
-  mutate(Length = as_factor(Length)) %>% 
-  filter(str_detect(sncRNA,spike_reg_ex)) %>%
-  group_by(Length) %>% 
-  summarise(Reads = sum(Reads)) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","spike_ins"))
-)
-  dev.off()
-
-pdf(str_glue("histograms_piRNA_reads_FC_filtered.pdf"))
-
-map(hist_files_fc, ~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
-  mutate(Length = as_factor(Length)) %>% 
-  filter(str_detect(sncRNA,piRNA_reg_ex)) %>%
-  group_by(Length) %>% 
-  summarise(Reads = sum(Reads)) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","piRNA"))
-)
-  dev.off()
-  
-pdf(str_glue("histograms_miRNA_reads_Salmon.pdf"))
-
-map(hist_files_salmon,~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
-  mutate(Length = as_factor(Length)) %>% 
-  filter(str_detect(sncRNA,miRNA_reg_ex)) %>%
-  group_by(Length) %>% 
-  summarise(Reads = sum(Reads)) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","miRNA"))
-)
-  dev.off()
-  
-  
-pdf(str_glue("histograms_all_RNA_reads_Salmon.pdf"))
-
-map(hist_files_salmon,~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
-  mutate(Length = as_factor(Length)) %>% 
-  #filter(str_detect(sncRNA,miRNA_reg_ex)) %>%
-  group_by(Length) %>% 
-  summarise(Reads = sum(Reads)) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","all_RNA"))+
-  coord_flip()
-)
-  dev.off()  
-
-  
-## piRNA reads ------
-reads_piRNA <- read_tsv("reads_piRNA.txt",
-                        col_names = c("Read","Length","sRNAs","read_sequence", "Sigar"))  
-
-reads_piRNA %>% count(Sigar)
-reads_piRNA %>% count(Length)
-
-piRNA_reads <- reads_piRNA %>% 
-  select(Read, sRNAs, read_sequence, Length) %>% 
-  separate(sRNAs, str_c("V",1:2), 
-           extra = "merge", fill = "right", sep = ",") %>% 
-  filter(is.na(V2)) %>% 
-  select(-V2) %>% 
-  filter(str_detect(V1, piRNA_reg_ex))
-
-piRNA_reads %>% 
-  mutate(Length = as_factor(Length)) %>% 
-  group_by(Length) %>% 
-  #summarise(Read) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length))+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  ggtitle("COLO205_dil_A_NT_1_piRNA_reads" %>% basename %>% str_replace("allRNA.txt","all_RNA"))+
-  coord_flip()
-
-
-key_mIrna_pIrna <- gtf_piB_RCentr %>% 
-  as_tibble() %>% 
-  distinct(gene_id, .keep_all = T) %>% 
-  select(gene_id,seq_RNA,gene_type)
-
-test_mut_reads <- reads_piRNA %>% 
-  #head(1000) %>% 
-  filter(str_detect(sRNAs, miRNA_reg_ex)) %>% 
-  select(Read, sRNAs, read_sequence) %>% 
-  separate(sRNAs, str_c("V",1:12), 
-           extra = "merge", fill = "right", sep = ",") %>%
-  pivot_longer(cols = starts_with("V"), 
-               names_to = "alignment", values_to = "sRNAs", values_drop_na = T) %>% 
-  left_join(key_mIrna_pIrna, by = c("sRNAs" = "gene_id"))
-  
-test_mut_reads %>% filter(gene_type %in% c("miRNA", "piRNA")) 
-test_mut_reads %>% 
-  group_by(Read) %>% 
-
-# different way -----
-mutate_all(~replace(., is.na(.), "SS_22"))
-
-get_gene_type <- function(x){key_mIrna_pIrna %>% 
-  filter(gene_id== x) %>% 
-  .$seq_RNA}
-
-test_mut_reads %>% head %>% 
-  mutate_at(vars(starts_with("V")), ~map_chr(.,get_gene_type)) 
-
-```
-
-Finally we exit the docker container
+## Finally we exit the docker container or we proceed to DEA
 ```{bash exit docker}
 # exit docker container
 exit

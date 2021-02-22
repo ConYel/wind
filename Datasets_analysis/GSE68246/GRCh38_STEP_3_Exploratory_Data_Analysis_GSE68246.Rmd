@@ -144,7 +144,7 @@ fc <- list.files(path = my_basename,
                  full.names = TRUE) %>% 
   read_rds()
 
-# keep only the samples treated and not treated replicates-----
+# change the names of the samples to more informative -----
 colnames(fc$counts) <- as.character(targets_file$sample_name)
 colnames(fc$stat) <-c("Status", as.character(targets_file$sample_name))
 
@@ -440,7 +440,7 @@ map2(norm_dgls, dat_path, ~function_MDS(.x,.y))
 ## https://github.com/mikelove/DESeq2/blob/master/R/plots.R
 
 function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 500){
-  library(DESeq2)
+  suppressPackageStartupMessages(library(DESeq2))
   # calculate the variance for each gene
   rv <- rowVars(dgl_norm_data[[norm_method]]$counts)
   
