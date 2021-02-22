@@ -43,18 +43,17 @@ todate <- format(Sys.time(), "%d_%b_%Y")
 ## Make the directory for the results of the DE analysis
 
 ```{r make dirs}
-my_basename <- "Breast_Cancer_TCGA"
-my_exp <- "BRCA"
-my_exp_sal <- "salmon"
-my_exp_fc <- "featureCounts"
-dat_path <-  str_glue("{my_basename}/DEA_{my_exp}_{todate}/{c(my_exp_sal,my_exp_fc)}") %>% 
-  as.list %>% 
-  set_names("salmon","featureCounts")
-dat_path %>% map(~dir.create(str_glue("./{.x}"), recursive = TRUE))
+my_basename <- file.path("Datasets_analysis", "TCGA_BRCA") ## INPUT name of the main folder 
+my_exp <- "Breast_Cancer_TCGA" ## INPUT name of the analysis
+genome_input <- "GRCh38" ## INPUT genome version here
+my_tools <- c("salmon","featureCounts")
+dat_path <- file.path(my_basename, str_glue("DEA_{my_exp}_{genome_input}_{todate}"),
+                      my_tools) %>% set_names(my_tools)
+dat_path %>% map(~dir.create(., recursive = TRUE))
 ```
 ## 1. Import the normalized files
 
-```{r import salmon}
+```{r import salmon and fc}
 list_norm_dgls <- list.files(path = my_basename, pattern = "list_norm_dgls.+rds",
   recursive = TRUE, full.names = TRUE)
 
@@ -64,6 +63,7 @@ salmon_norm <- list_norm_dgls %>%
   str_detect("salmon") %>% 
   list_norm_dgls[.] %>% 
   read_rds()
+
 # load featurecounts normalized files 
 fc_norm <- list_norm_dgls %>% 
   unlist %>% 
@@ -73,7 +73,7 @@ fc_norm <- list_norm_dgls %>%
 ```
 ## 2. Extract normalized objects 
 
-We will work with TMM normalization and  TMM voom with quality weights
+We will work with TMM normalization and TMM voom with quality weights
 
 ```{r extract norm dgl}
 salmon_edgR_TMM <- salmon_norm[["TMM"]]
@@ -88,19 +88,15 @@ If we load the voom object we can extract the design matrix otherwise we can cre
 ```{r design}
 #1 voom object
 design <- salmon_vm_QW_TMM$design
-#or dgl object
-targets <- salmon_edgR_TMM$samples
-design <- model.matrix(~0 + targets$group ,data = targets)
-colnames(design) <- colnames(design) %>% 
-  str_remove(".+\\$group")
 ```
 ## 4. EdgeR
 Perform the analysis with edgeR TMM normalization for both salmon and featurecounts
 
 ```{r edgeR_DE}
 # design ----
+colnames(design) # check the names and make the contrasts
 con_mat <- makeContrasts(
-  tumor_vs_normal = Primary_Solid_Tumor - Solid_Tissue_Normal,
+  Tumour_Normal = Primary_Solid_Tumor - Solid_Tissue_Normal,
   levels = design)
 
 ## salmon ----
@@ -114,12 +110,14 @@ DE_salmon_edgR <- con_mat %>%
   topTags(n = nrow(.), adjust.method = "BH", sort.by = "PValue", p.value = 1) %>% 
    .$table %>% 
   as_tibble(rownames = "smallRNA") %>% 
-  write_tsv(str_glue("{dat_path[['salmon']]}/DE_salmon_edgR_TMM_{.x}.txt"))  
+  write_tsv(file.path(dat_path[['salmon']], str_c("DE_salmon_edgR_TMM_", .x, ".txt")))  
  )
- 
+
+pdf(file.path(dat_path[['salmon']],str_c("hist_edger_p_value_", names(DE_salmon_edgR[1]),".pdf") ))
 hist(DE_salmon_edgR[[1]]$PValue, breaks = 0:20/20,
      col = "grey50", border = "white")
-
+ dev.off()
+ 
 salmon_edgeR_TMM_p <- DE_salmon_edgR[[1]] %>% 
   mutate(salmon_edgeR = if_else(
     FDR >= 0.05, 0, if_else(
@@ -137,12 +135,14 @@ DE_FC_edgR <- con_mat %>% colnames() %>% set_names() %>%
   topTags(n = nrow(.), adjust.method = "BH", sort.by = "PValue", p.value = 1) %>% 
    .$table %>% 
   as_tibble(rownames = "smallRNA") %>% 
-  write_tsv(str_glue("{dat_path[['featureCounts']]}/DE_fc_edgR_TMM_{.x}.txt"))  
+  write_tsv(file.path(dat_path[['featureCounts']],str_c("DE_fc_edgR_TMM",.x ,".txt")))  
  )
 
+pdf(file.path(dat_path[['featureCounts']],str_c("hist_edger_p_value_", names(DE_salmon_edgR[1]),".pdf") ))
 hist(DE_FC_edgR[[1]]$PValue, breaks = 0:20/20,
      col = "grey50", border = "white")
-
+ dev.off()
+ 
 fc_edgeR_TMM_p <- DE_FC_edgR[[1]] %>% 
   mutate(fc_edgeR = if_else(
     FDR >= 0.05, 0, if_else(
@@ -155,7 +155,7 @@ fc_edgeR_TMM_p <- DE_FC_edgR[[1]] %>%
 results <-  salmon_edgeR_TMM_p %>% 
   inner_join(fc_edgeR_TMM_p) %>%  select(-smallRNA)
 
-pdf(str_glue("{dat_path}/venn_diagram_DE_salmon_fC_edgeR_miR_450a_e.pdf"))
+pdf(file.path(dirname(dat_path[1]), "venn_diagram_DE_salmon_fC_edgeR.pdf"))
 vennDiagram(results, 
     include=c("up", "down"),
     counts.col=c("red", "blue"),
@@ -166,7 +166,7 @@ dev.off()
 
 ```{r limma_DE}
 # design ----
-
+### same as before
 ## salmon ----
 salmon_vm_QW_TMM <- lmFit(salmon_vm_QW_TMM, design = design)
 salmon_vm_QW_TMM <- contrasts.fit(salmon_vm_QW_TMM, con_mat)
@@ -180,20 +180,23 @@ salmon_DES <- con_mat %>% colnames() %>% set_names() %>%
                              sort.by = "p") %>% 
   as_tibble(rownames = "smallRNA") %>% 
   rename_at(vars(logFC:B), list(~str_c(.,"_",!!quo(.x)))) %>% 
-  write_tsv(str_glue("{dat_path[['salmon']]}/DE_salmon_vm_QW_TMM_{.x}.txt"))  
+  write_tsv(file.path(dat_path[['salmon']], str_c("DE_salmon_vm_QW_TMM_",.x, ".txt")))  
  )
 
+pdf(file.path(dat_path[['salmon']],str_c("hist_limma_p_value_", names(salmon_DES[1]),".pdf") ))
 hist(salmon_DES[[1]] %>% select(starts_with("P.Value")) %>% deframe(), 
      breaks = 0:20/20,
      col = "grey50", border = "white")
+dev.off()
 
 salmon_vm_QW_TMM_p <- salmon_DES[[1]] %>% 
-  mutate(salmon_voomQ = if_else(
-    adj.P.Val_tumor_vs_normal >= 0.05, 0, if_else(
-      logFC_tumor_vs_normal > 0, 1, -1
-    )
-  )) %>% 
-  select(smallRNA , salmon_voomQ )
+  mutate(salmon_voomQ = 
+           case_when(
+             select(., starts_with("adj.P.Val")) >= 0.05 ~ 0L,
+             select(., starts_with("logFC")) > 0 ~ 1L,
+             select(., starts_with("logFC")) < 0 ~ -1L
+           )) %>% 
+  select(smallRNA , salmon_voomQ) 
 
 ## featureCounts ----
 fc_vm_QW_TMM <- lmFit(fc_vm_QW_TMM, design = design)
@@ -208,23 +211,27 @@ fc_DES <- con_mat %>% colnames() %>% set_names() %>%
                              sort.by = "p") %>% 
   as_tibble(rownames = "smallRNA") %>% 
   rename_at(vars(logFC:B), list(~str_c(.,"_",!!quo(.x)))) %>% 
-  write_tsv(str_glue("{dat_path[['featureCounts']]}/DE_fc_vm_QW_TMM_{.x}.txt"))  
+  write_tsv(file.path(dat_path[['featureCounts']], str_c("DE_fc_vm_QW_TMM_",.x,".txt")))  
  )
 
+pdf(file.path(dat_path[['featureCounts']],str_c("hist_limma_p_value_", names(fc_DES[1]),".pdf") ))
 hist(fc_DES[[1]] %>% select(starts_with("P.Value")) %>% deframe(), 
      breaks = 0:20/20,
      col = "grey50", border = "white")
+dev.off()
 
 fc_vm_QW_TMM_p <- fc_DES[[1]] %>% 
-  mutate(fc_voomQ = if_else(
-    adj.P.Val_tumor_vs_normal >= 0.05, 0, if_else(
-      logFC_tumor_vs_normal > 0, 1, -1
-    )
-  )) %>% 
+  mutate(fc_voomQ = 
+           case_when(
+             select(., starts_with("adj.P.Val")) >= 0.05 ~ 0L,
+             select(., starts_with("logFC")) > 0 ~ 1L,
+             select(., starts_with("logFC")) < 0 ~ -1L
+           ))%>% 
   select(smallRNA , fc_voomQ )
 
 # venn diagram for salmon/fc limma -----
-nc_RNA_categories <- plyranges::read_gff2("../genome_transc_human/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
+nc_RNA_categories <- file.path("human_data","sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
+  plyranges::read_gff2() %>% 
   as_tibble() %>% 
   select(gene_id, gene_type) %>% 
   distinct(gene_id, .keep_all = TRUE) 
@@ -232,7 +239,7 @@ nc_RNA_categories <- plyranges::read_gff2("../genome_transc_human/ncRNA_transcri
 results <-  salmon_vm_QW_TMM_p %>% 
   inner_join(fc_vm_QW_TMM_p) %>%  select(-smallRNA)
 
-pdf(str_glue("{dat_path}/venn_diagram_DE_salmon_fC_limma__miR_450a_e.pdf"))
+pdf(file.path(dirname(dat_path[1]), str_c("venn_diagram_DE_salmon_fC_limma_", colnames(con_mat)[1],".pdf")))
 vennDiagram(results, 
     include=c("up", "down"),
     counts.col=c("red", "blue"),
@@ -252,76 +259,14 @@ map2(fc_DES, salmon_DES, ~.x %>%
      ) %>% 
   purrr::reduce(full_join) %>% 
   inner_join(nc_RNA_categories, by = c("smallRNA" = "gene_id")) %>% 
-  write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/all_comparisons_voom_QW_TMM_salmon_fc_LFCs_{todate}.txt"))
+  write_tsv(file.path(dirname(dat_path[1]),str_c("all_comparisons_voom_QW_TMM_salmon_fc_LFCs_", todate,".txt")))
 
 ```
 ## 6. Compare the DE results with public results
 
 ```{r}
 #create the file with names and rnacentral ids -----
-all_comp <- read_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/all_comparisons_voom_QW_TMM_salmon_fc_LFCs_{todate}.txt"))
 
-smallRNAs_gtf <- plyranges::read_gff2("../genome_transc_human/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
-  as_tibble() %>% 
-  select(gene_id, gene_type) %>% 
-  distinct(gene_id, .keep_all = TRUE) %>% 
-  dplyr::rename("smallRNA" = gene_id) 
-
-all_comp <- all_comp %>% 
-  left_join(smallRNAs_gtf) %>%
-  separate(col = smallRNA, 
-           into = c("RNAcentral_id", "GR"), 
-           sep = "_GR_")
-
-RNACentral_ids <- data.table::fread("../genome_transc_human/rnacentral_ids_hg38.txt")
-
-smallRNAs_gtf %>% 
-  as_tibble() %>% 
-  left_join(RNACentral_ids) %>% 
-  mutate( is_correct = if_else(RNA_type == gene_type,true = T,F)) %>% 
-  filter(!is.na(GR), is.na(is_correct))
-
-all_comp %>% 
-  left_join(RNACentral_ids) %>% 
-   write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/all_comparisons_with_gene_names.txt"))
-
-# cross the results created with the public results -----
-
-all_comp <- "GSE129076/DEA_br_cancer_12_Sep_2020/all_comparisons_with_gene_names.txt" %>% vroom
-public_res <- "GSE129076/Public_results_GSE129076.csv" %>% 
-  vroom 
-
-rnacentral_ids <- vroom::vroom("../genome_transc_human/id_mapping.tsv.gz", 
-                        col_names = c("RNAcentral_id", 
-                                      "Database",
-                                      "external_id",
-                                      "NCBI_taxon_id",
-                                      "RNA_type",
-                                      "gene_name"),
-                        delim = "\t") %>% 
-  filter(NCBI_taxon_id == "9606") %>% 
-  mutate(gene_name = tolower(gene_name))
-
-public_res %>% 
-  left_join(rnacentral_ids, by = c("smallRNA" = "gene_name")) %>% 
-  distinct(RNAcentral_id, .keep_all = T) %>% 
-  right_join(all_comp) %>% 
-  mutate(across(.cols = starts_with("logFC_"),
-                gtools::logratio2foldchange,
-                .names = "{str_remove({col}, pattern='log')}")) %>% 
-  vroom_write("GSE129076/all_comparisons_public_res.txt")
-
-rnacentral_ids %>% 
-  distinct(RNAcentral_id, gene_name,.keep_all = T) %>% 
-  right_join(all_comp) %>% 
-  mutate(across(.cols = starts_with("logFC_"),
-                gtools::logratio2foldchange,
-                .names = "{str_remove({col}, pattern='log')}")) %>% 
-  vroom::vroom_write("GSE129076/all_comparisons_public_names.txt")
-
-res_ids <- public_res$smallRNA %>% str_c(collapse = "|")
-
-all_comp %>% mutate(across(.cols = starts_with("logFC_"),gtools::logratio2foldchange,.names = "{str_remove({col}, pattern='log')}"))
 ```
 # 7. Find predicted targets
 
