@@ -500,8 +500,6 @@ map2(norm_dgls, dat_path, ~function_PCA(.x,.y))
 function_comp_groups <- function(dgl_norm_data, tool){
  grouped_cpm  <- dgl_norm_data$TMM %>% 
     cpmByGroup.DGEList
-# keep <- rowSums(grouped_cpm > 1) > 0
-# grouped_cpm[keep,] %>% 
    grouped_cpm %>% 
    as_tibble(rownames = "sncRNA") %>% 
    rename_at(vars(-matches("sncRNA")), list(~str_c(.,tool)))

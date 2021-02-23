@@ -462,7 +462,7 @@ map2(norm_dgls, dat_path, ~function_MDS(.x,.y))
 ## https://github.com/mikelove/DESeq2/blob/master/R/plots.R
 
 function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 500){
-  library(DESeq2)
+  suppressPackageStartupMessages(library(DESeq2))
   # calculate the variance for each gene
   rv <- rowVars(dgl_norm_data[[norm_method]]$counts)
   
@@ -522,11 +522,8 @@ map2(norm_dgls, dat_path, ~function_PCA(.x,.y))
 function_comp_groups <- function(dgl_norm_data, tool){
  grouped_cpm  <- dgl_norm_data$TMM %>% 
     cpmByGroup.DGEList
-# keep <- rowSums(grouped_cpm > 1) > 0
-# grouped_cpm[keep,] %>% 
    grouped_cpm %>% 
-   as_tibble(rownames = "sncRNA") %>% 
-   rename_at(vars(-matches("sncRNA")), list(~str_c(.,tool)))
+   as_tibble(rownames = "sncRNA") 
 }
 
 comp_FC_sal <- map2(norm_dgls, list("_salmon", "_fc"), ~function_comp_groups(.x,.y))
@@ -541,12 +538,15 @@ complete_biotypes_seqs <- annot_tbl %>%
   dplyr::rename("sncRNA" = gene_id)
 
 salmon_FC_cpm_union_grouped <- comp_FC_sal %>% 
-  bind_rows() %>% 
+  bind_rows(.id = "method") %>% 
+  pivot_longer(cols = !c(method,sncRNA)) %>% 
+  pivot_wider(names_from = c(name, method),
+              values_from = value) %>% 
   left_join(complete_biotypes_seqs) %>%
   select(sncRNA, gene_type, everything()) %>% 
   write_tsv(file.path(dirname(dat_path[1]), "salmon_FC_cpm_union_grouped.txt"))
 
-# piCK the top 100 expressed piRNAs between FC salmon and all groups -----
+# pick the top 100 expressed piRNAs between FC salmon and all groups -----
 all_exprs_cpm_TMM <- dat_path %>% 
   map(~list.files(path = .x, 
                   recursive = TRUE ,
@@ -573,95 +573,82 @@ all_exprs_cpm_TMM %>%
               values_from = "value") %>% 
   write_tsv(file.path(dirname(dat_path[1]),"salmon_FC_cpm_union_top100.txt"))
 ```
-## 16. Make histogram of length
+## 16. Histograms of length per gene_type (sncRNA category)
+### i. Make a table with the expressed gene_types per method
 
-```{r histogram of seq length}
+```{r stats_gene_types}
+# import gtf and keep only the length of sncRNA
 annot_tbl <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
   read_gff2() %>% 
-  as_tibble %>%
-  select(-c(type, score, phase)) %>% 
-  dplyr::rename("length_w" = width)
+  as_tibble() %>%
+  distinct(gene_id, .keep_all = T) %>% 
+  select(gene_id, "length_w" = width, gene_type)
 
+# a function to prepare info for the table
 function_prep_hist <- function(dgl_norm_data, annot_gtf){
   prep_hist <- annot_gtf %>% 
-    distinct(gene_id, .keep_all = T) %>% 
     filter(gene_id %in% rownames(dgl_norm_data$TMM))
 }
 
+# apply the function to the normalized dgl objects
 smallRNA_seqs <- map2(norm_dgls, list(annot_tbl, annot_tbl), ~function_prep_hist(.x,.y))
 
-smallRNA_seqs[["fc"]] %>% # create one also per group
+# make the dataframes with info regarding expressed gene_types
+fc_n <- smallRNA_seqs[["fc"]] %>% 
   dplyr::count(gene_type, sort = T) %>% 
-  dplyr::rename("fc_n" = n) %>% 
-  full_join( smallRNA_seqs[["salmon"]] %>% 
+  dplyr::rename("fc_n" = n) 
+
+salmon_n <- smallRNA_seqs[["salmon"]] %>% 
   dplyr::count(gene_type, sort = T) %>% 
-  dplyr::rename("salmon_n" = n)) %>% 
-  full_join(
-    smallRNA_seqs[["fc"]] %>% 
+  dplyr::rename("salmon_n" = n)
+
+common_n <- smallRNA_seqs[["fc"]] %>% 
     inner_join(smallRNA_seqs[["salmon"]] ) %>% 
     dplyr::count(gene_type, sort = T) %>% 
-    dplyr::rename("common_n" = n)) %>% 
-  full_join(
-smallRNA_seqs[["fc"]] %>% 
+    dplyr::rename("common_n" = n)
+  
+unique_FC_n <- smallRNA_seqs[["fc"]] %>% 
     anti_join(smallRNA_seqs[["salmon"]] ) %>% 
     dplyr::count(gene_type, sort = T) %>% 
-    dplyr::rename("unique_FC_n" = n)) %>% 
-   full_join(
-smallRNA_seqs[["salmon"]]  %>% 
+    dplyr::rename("unique_FC_n" = n)
+
+unique_salmon_n <- smallRNA_seqs[["salmon"]]  %>% 
     anti_join(smallRNA_seqs[["fc"]]) %>% 
     dplyr::count(gene_type, sort = T) %>% 
-    dplyr::rename("unique_salmon_n" = n)) %>% 
+    dplyr::rename("unique_salmon_n" = n)
+
+stats_gene_types_ids <- fc_n %>% 
+  full_join(salmon_n) %>% 
+  full_join(common_n) %>%
+  full_join(unique_FC_n) %>%
+  full_join(unique_salmon_n) %>%
   write_tsv(file.path(dirname(dat_path[1]), "stats_gene_types_ids.txt"))
+rm(fc_n, salmon_n, common_n, unique_FC_n, unique_salmon_n)
+```
+### ii. Make histograms of length
 
-# per group summary ----
-groups <- targets_file$group %>% levels() %>% set_names()
+```{r histogram of seq length}
+# make a hist 
+hist_tbl <- comp_FC_sal %>% 
+  bind_rows(.id = "method") %>% 
+  pivot_longer(cols = !c(method,sncRNA)) %>% 
+  left_join(annot_tbl, by = c("sncRNA" = "gene_id"))
 
-salmon_groups <- groups %>% map(~comp_FC_sal$salmon %>%
-  filter_at(vars(matches(!!str_c(.x,"_salmon"))),
-    any_vars(. > 0)) %>% 
-    select(sncRNA) %>% 
-    mutate(!!str_c("group_",.x) := .x)
-) %>% purrr::reduce(full_join) %>% 
-  mutate(salmon = "salmon") %>% 
-  left_join(smallRNA_seqs$salmon, by = c("sncRNA" = "gene_id")) %>% 
-  select(-c(seqnames:end, strand, source, sRNA_id, sRNA_id2)) %>% 
-   pivot_longer(cols = starts_with("group_"), values_to = "rank_salmon"
-    ) %>% select(-name)
-
-FC_groups <- groups %>% map(~comp_FC_sal$fc %>%
-  filter_at(vars(matches(!!str_c(.x,"_fc"))),
-    any_vars(. > 0)) %>% 
-    select(sncRNA) %>% 
-    mutate(!!str_c("group_",.x) := .x)
-) %>% 
-  purrr::reduce(full_join) %>% 
-  mutate(FeatureCount = "FeatureCount") %>% 
-  left_join(smallRNA_seqs$fc, by = c("sncRNA" = "gene_id")) %>% 
-  select(-c(seqnames:end, strand, source, sRNA_id, sRNA_id2)) %>% 
-  pivot_longer(cols = starts_with("group_"), values_to = "rank_FC"
-    ) %>% select(-name)
-
-## histograms ----
 pdf(file.path(dirname(dat_path[1]),"length_histogram.pdf"))
-map(FC_groups$gene_type %>% as_factor() %>% levels(), 
-  ~salmon_groups %>% 
-  full_join(FC_groups, 
-    by = c("sncRNA","seq_RNA", 
-      "gene_type", "length_w")) %>% 
-    filter(gene_type == .x) %>% 
-    pivot_longer(c(salmon, FeatureCount),
-    "tool", values_to = "Quantification") %>%
-  pivot_longer(c(rank_salmon, rank_FC), "rank", values_to = "groups") %>% 
-  filter(!is.na(Quantification),!is.na(groups)) %>%
-    ggplot() +
-    geom_bar(mapping = aes(x = factor(length_w), fill = Quantification), 
-     position = "dodge") +
-    facet_wrap(~ groups,ncol = 2)+
-    scale_x_discrete(name = 'length')+ 
-    scale_y_continuous(labels = scales::comma)+
-    ggtitle(.x) +
-    coord_flip()
-)
+hist_tbl$gene_type %>% 
+  as_factor() %>% 
+  levels() %>% 
+  map(~filter(hist_tbl, gene_type == .x) %>%
+        filter(!is.na(method),!is.na(name)) %>% 
+        ggplot() +
+        geom_bar(mapping = aes(x = factor(length_w), fill = method), position = "dodge") +
+        facet_wrap(~ name, nrow = 1) +
+        scale_x_discrete(name = 'length')+ 
+        scale_y_continuous(labels = scales::comma, guide = guide_axis(angle = 45))+
+        ggtitle(.x) +
+        coord_flip() +
+        theme_bw()
+      )
 dev.off()
 ```
 ## 17. Sequence logos
@@ -886,7 +873,7 @@ spikes_ins_plot
 zoom_spikes_ins_plot
 dev.off()
 ```
-### iiv. BoxPlot of the cpm of piRNAs in COLO205 and Testis before and after treatment
+### iv. BoxPlot of the cpm of piRNAs in COLO205 and Testis before and after treatment
 
 ```{r boxplot of piRNAs}
 

@@ -297,11 +297,13 @@ library(circlize)
 
 ```{r heatmap dataload}
 # load the piRNAs log fold changes
-piRNAs_DE <- list.files(pattern = "all_comparisons_voom_QW_TMM") %>% 
+piRNAs_DE <- list.files(path = dirname(dat_path[1]), 
+                        pattern = "all_comparisons",
+                       full.names = TRUE) %>% 
   read_tsv() %>% 
   filter(gene_type == "piRNA",
          across(.cols = contains("adj.P.Val"), 
-                .fns = ~ .x< 0.05)) %>% 
+                .fns = ~ .x < 0.05)) %>% 
   dplyr::select(smallRNA, contains("logFC"))
   
 
