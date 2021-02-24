@@ -582,7 +582,7 @@ annot_tbl <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34
   read_gff2() %>% 
   as_tibble() %>%
   distinct(gene_id, .keep_all = T) %>% 
-  select(gene_id, "length_w" = width, gene_type)
+  select(gene_id, "length_w" = width, gene_type, seq_RNA)
 
 # a function to prepare info for the table
 function_prep_hist <- function(dgl_norm_data, annot_gtf){
@@ -633,7 +633,9 @@ hist_tbl <- comp_FC_sal %>%
   bind_rows(.id = "method") %>% 
   pivot_longer(cols = !c(method,sncRNA)) %>% 
   left_join(annot_tbl, by = c("sncRNA" = "gene_id"))
-
+# filter cpm value to keep only the expressed molecules
+hist_tbl <- hist_tbl %>%
+  filter(value > 0)
 pdf(file.path(dirname(dat_path[1]),"length_histogram.pdf"))
 hist_tbl$gene_type %>% 
   as_factor() %>% 
@@ -657,25 +659,28 @@ dev.off()
 # sequences logos -----
 library(ggseqlogo)
 
+sample_groups <- hist_tbl %>% dplyr::count(name) %>% .$name
+
+
 pdf(file.path(dirname(dat_path[1]), "piRNA_logos_FC_salmon.pdf"))
 #salmon
-groups %>% map2(list(salmon_groups),
-  ~.y %>% 
-    filter(gene_type == "piRNA") %>%
-    filter_at(vars(starts_with("rank")), any_vars(. == .x)) %>% 
-  .$seq_RNA %>% 
-  str_sub(1,15) %>% 
-  ggseqlogo(method = 'prob', font="roboto_regular") +
-  ggtitle(str_glue("Salmon_{.x}")))  
+map(.x = sample_groups, 
+  .f = ~hist_tbl %>% 
+    filter(gene_type == "piRNA", method == "salmon", name == .x) %>% 
+    mutate(seq_RNA = seq_RNA %>% str_sub(1,15)) %>% 
+    .$seq_RNA %>% 
+    ggseqlogo(method = 'prob', font="roboto_regular") +
+    ggtitle(str_glue("Salmon_{.x}"))
+  )  
 #featureCounts
-groups %>% map2(list(FC_groups),
-  ~.y %>% 
-    filter(gene_type == "piRNA") %>%
-    filter_at(vars(starts_with("rank")), any_vars(. == .x)) %>% 
-  .$seq_RNA %>% 
-  str_sub(1,15) %>% 
-  ggseqlogo(method = 'prob', font="roboto_regular") +
-  ggtitle(str_glue("FeatureCounts_{.x}")))  
+map(.x = sample_groups, 
+  .f = ~hist_tbl %>%
+    filter(gene_type == "piRNA", method == "fc", name == .x) %>% 
+    mutate(seq_RNA = seq_RNA %>% str_sub(1,15)) %>% 
+    .$seq_RNA %>% 
+    ggseqlogo(method = 'prob', font="roboto_regular") +
+    ggtitle(str_glue("FeatureCounts_{.x}"))
+  )
 dev.off()
 ```
 
@@ -929,45 +934,8 @@ dev.off()
 ```
 
 
-
-
-
-
-
-### iii. make a ggbio plot 
-```{r}
-library("BSgenome.Hsapiens.UCSC.hg38")
-library(ggbio)
-
-bg <- BSgenome.Hsapiens.UCSC.hg38
-# import the bam of testis sample
-testis_pool_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_align/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam"
-Rsamtools::indexBam(testis_pool_bam)
-
-testis_pool_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_align/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam" %>%
-  read_bam %>% 
-  select(seq) %>%
-  filter_by_overlaps(wh,!is_unmapped_query)
-
-testis_pool_FC_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam.featureCounts.bam" 
-
-Rsamtools::sortBam(testis_pool_FC_bam, 
-        destination ="../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam.featureCounts.sorted.bam")
-
-testis_pool_FC_bam <- "../testis_colo_pub_workflow/star/Human_Testis_Pool_Non_Treated_Aligned.sortedByCoord.out.bam.featureCounts.sorted.bam.bam"
-Rsamtools::indexBam(testis_pool_FC_bam)
-
-testis_pool_FC_bam_read <-testis_pool_FC_bam %>%
-  read_bam %>% 
-  select(XS,XT,seq) %>%
-  filter_by_overlaps(wh, minoverlap = 10L)
-
- wh %>% select(seq_RNA,gene_id) %>% as_tibble
-aligned_smallRNAs<-testis_pool_FC_bam_read %>% select(XT, cigar) %>% as_tibble %>% count(XT) # %>% arrange(desc(width),seq)
-# the plot
-p.mis <- autoplot(testis_pool_bam, 
-                  bsgenome = bg, 
-                  which = wh, 
-                  stat = "mismatch")
+## Finally we exit the docker container 
+```{bash exit docker}
+# exit docker container
+exit
 ```
-
