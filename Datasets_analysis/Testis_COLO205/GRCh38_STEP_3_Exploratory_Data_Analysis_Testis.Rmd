@@ -83,7 +83,6 @@ targets_file <- file.path(my_basename,"downloaded_samples") %>%
          ),
          batch = as_factor(batch),
          read_count = as.integer(read_count),
-         
          across(.cols = where(is.character), as_factor)) %>% 
   dplyr::rename(sample_name = sample_title)
 
