@@ -88,9 +88,8 @@ targets_file <- file.path(my_basename,"downloaded_samples") %>%
 
 targets_file$group %>% levels()
 
-# keep only the non treated 
-targets_file <- targets_file %>% filter(!str_detect(group, "dil"), 
-                        !str_detect(run_accession,"431|432|433"))
+# remove last testis sample in order to have 3 non treated testis samples.
+targets_file <- targets_file %>% filter(sample_name != "Non_treated_Testis_4")
 
 targets_file <- targets_file %>% mutate(
   across(where(is.factor), droplevels)
@@ -379,142 +378,6 @@ norm_dgls <- filtered_dgls %>%
   do_not_print <- map2( .x = norm_dgls, .y = dat_path, 
     ~write_rds(.x, file = file.path(.y, str_glue("list_norm_dgls_{basename(.y)}.rds"))))
 ```
-## 12. Make h-clustering
-
-```{r Hierarchical clustering}
-function_clust <- function(dgl_norm_data, plot_path){
-  hc_methods <- c("ward.D2",
-                "complete",
-                "average")
-  
-  list_distc <- c(dgl_norm_data[1:4] %>%
-      map(~cpm(.x, normalized.lib.sizes = TRUE, log=TRUE, prior.count=5)),
-      list("voom_Quantile" = dgl_norm_data[[5]]$E,
-      "voom_TMM"= dgl_norm_data[[6]]$E,
-      "voom_TMMwsp" = dgl_norm_data[[7]]$E,
-      "voomQW_Quantile" = dgl_norm_data[[8]]$E,
-      "voomQW_TMM"= dgl_norm_data[[9]]$E,
-      "voomQW_TMMwsp" = dgl_norm_data[[10]]$E)) %>% map(~dist(t(.x)))
-  #pheatmap start
-  list_distc_mat <- list_distc  %>% map(~as.matrix(.x))
-  colours_pheat <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
-  pdf(file.path(plot_path, str_glue("distance_matrix_hclust_{basename(plot_path)}.pdf")))
-  list_distc_mat %>% imap(~pheatmap(.x,
-           clustering_distance_rows = "euclidean",
-           clustering_distance_cols = "euclidean",
-           col = colours_pheat,
-           main = str_glue({.y})))
-  dev.off()
-  #pheatmap end
-  #list_distc <- log_cpm %>% map(~dist(t(.x)))
-  list_hc <- sapply(hc_methods, function(x) map(list_distc, ~hclust(.x,method = x)))
-  names(list_hc) <- rep(rownames(list_hc),times = ncol(list_hc))
-  
-  pdf(file.path(plot_path, str_glue("hierarchic_clust_{basename(plot_path)}.pdf")))
-  for (i in seq_along(list_hc)) {
-       rafalib::myplclust(list_hc[[i]],
-       lab.col = as.character(dgl_fc$colours),  
-       xlab = NULL,
-       main = str_glue("{enframe(list_hc[[i]])$value[7]} - {enframe(list_hc[[i]])$value[5]} - {names(list_hc[i])}"))
-       legend("topright",
-       legend = levels(dgl_fc$samples$group),
-       fill = levels(dgl_fc$colours),  
-       bty="n",
-       cex = 0.9)
-       }
-  dev.off()
-}
-
-map2(norm_dgls, dat_path, ~function_clust(.x,.y))
-```
-## 13. Make MDS plot
-
-```{r MDS plot}
-function_MDS <- function(dgl_norm_data, plot_path){
-  par(mar=c(6,5,2,1)+ 0.1)
-  pdf(file.path(plot_path, str_glue("MDS_plot_{basename(plot_path)}.pdf")))
-  plotMDS(dgl_norm_data$TMM, 
-          labels = dgl_fc$samples$sample_name,
-          pch = 10,
-          cex = 0.7,
-    col = as.character(dgl_fc$colours), dim.plot = c(1,2))
-  legend("topright",
-       legend = levels(dgl_fc$samples$group),
-       fill = levels(dgl_fc$colours),
-       bty="n",
-       cex = 1.5, inset = c(.01,.09))
-  map2(c(3,1,2,2),c(4,3,3,4),
-  ~plotMDS(dgl_norm_data$TMM, labels = dgl_fc$samples$sample_name, pch = 10,
-    cex = 0.7,
-    col = as.character(dgl_fc$colours), 
-    dim.plot = c(.x,.y),
-    main = str_glue("MDS plot {names(dgl_norm_data[2])}"))
-  )
-  dev.off()
-}
-map2(norm_dgls, dat_path, ~function_MDS(.x,.y))
-```
-## 14. Make PCA plot
-
-```{r PCA plot}
-## modified from DESeq2::plotPCA
-## https://github.com/mikelove/DESeq2/blob/master/R/plots.R
-
-function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 500){
-  suppressPackageStartupMessages(library(DESeq2))
-  # calculate the variance for each gene
-  rv <- rowVars(dgl_norm_data[[norm_method]]$counts)
-  
-  # select the ntop genes by variance
-  select <- order(rv, decreasing=TRUE)[seq_len(min(ntop, length(rv)))]
-
-  # perform a PCA on the data in dgl_norm_data[[norm_method]]$counts for the selected genes
-  pca <- prcomp(t(dgl_norm_data[[norm_method]]$counts[select,]))
-  
-  # the contribution to the total variance for each component
-  percentVar <- pca$sdev^2 / sum( pca$sdev^2 )
-  
-  # create a new grouping factor
-  group <- dgl_norm_data[[norm_method]]$samples$group
-  
-  # assembly the data for the plot
-  d <- data.frame(PC1=pca$x[,1], PC2=pca$x[,2], group=group,
-                  name=colnames(dgl_norm_data[[norm_method]]$counts))
-  
-  # create batch if it exists
-  if(dgl_norm_data[[norm_method]]$samples$batch){
-    d$batch <- dgl_norm_data[[norm_method]]$samples$batch %>% as_factor
-    p <-  ggplot(data=d, 
-                 aes_string(x="PC1", 
-                            y="PC2", 
-                            color="batch", 
-                            shape="group"))
-  }else{
-  p <- ggplot(data=d, aes_string(x="PC1", y="PC2", shape="group"))
-  }
-  
-  p <- p +
-    geom_point(size=3) + 
-    xlab(paste0("PC1: ",round(percentVar[1] * 100),"% variance")) +
-    ylab(paste0("PC2: ",round(percentVar[2] * 100),"% variance")) +
-    coord_fixed()+
-    theme_minimal()+
-    labs(title=str_glue("PCA plot {norm_method}"))+
-    theme(plot.title = element_text(hjust = 0.5),
-          axis.text.x = element_text( face = "bold"),
-          axis.text.y = element_text( face = "bold"),
-          aspect.ratio = 1)
-  
-  # pdf
-  par(mar=c(6,5,2,1)+ 0.1)
-  pdf(file.path(plot_path, str_glue("PCA_plot_{norm_method}_{basename(plot_path)}.pdf")))
-  print(p)
-  dev.off()
-}
-
-map2(norm_dgls, dat_path, ~function_PCA(.x,.y))
-
-```
 ## 15. Compare groups between FeatureCounts and salmon results
 
 ```{r cpm venn comparison}
@@ -669,7 +532,13 @@ map(.x = sample_groups,
     mutate(seq_RNA = seq_RNA %>% str_sub(1,15)) %>% 
     .$seq_RNA %>% 
     ggseqlogo(method = 'prob', font="roboto_regular") +
-    ggtitle(str_glue("Salmon_{.x}"))
+    ggtitle(str_glue("Salmon_{.x}")) +
+    annotate('rect', xmin = 9.5, xmax = 10.5, 
+           ymin = -0.05, ymax = 1.05,
+           alpha = .1, col='black', fill='yellow') +
+    annotate('rect', xmin = 0.5, xmax = 1.5, 
+           ymin = -0.05, ymax = 1.05,
+           alpha = .1, col='black', fill='yellow')
   )  
 #featureCounts
 map(.x = sample_groups, 
@@ -678,208 +547,88 @@ map(.x = sample_groups,
     mutate(seq_RNA = seq_RNA %>% str_sub(1,15)) %>% 
     .$seq_RNA %>% 
     ggseqlogo(method = 'prob', font="roboto_regular") +
-    ggtitle(str_glue("FeatureCounts_{.x}"))
+    ggtitle(str_glue("FeatureCounts_{.x}")) +
+    annotate('rect', xmin = 9.5, xmax = 10.5, 
+           ymin = -0.05, ymax = 1.05,
+           alpha = .1, col='black', fill='yellow') +
+    annotate('rect', xmin = 0.5, xmax = 1.5, 
+           ymin = -0.05, ymax = 1.05,
+           alpha = .1, col='black', fill='yellow')
   )
 dev.off()
+1
 ```
-
 ## 18. plots and tables regarding piRNAs and spike-ins
-### i. Use two different datasets (1 testis, 1 COLO205)
+Use two different datasets, one for testis, one fore COLO205
+### i. COLO205 samples
+We slice the filtered primary dataset and we use normalization per each sample, thus only within sample norm.
 ```{r Dataset COLO205 FC, salmon}
-# Featurecounts ----------------------------------------------------------------
-# divide the primary dataset
-dgl_COLO_fc <- DGEList(counts = fc$counts[, str_detect(colnames(fc$counts), "COLO")],
-               samples =  targets_file %>% filter(str_detect(cells, "COLO")))
-
-group_COLO_fc <- filter(targets_file, str_detect(cells, "COLO"))$group %>% droplevels()
-#design matrix
-design_COLO <- model.matrix(~0 + group_COLO_fc)
-
-colnames(design_COLO) <- colnames(design_COLO) %>% 
-  str_remove("..+_fc") 
-
-rownames(design_COLO) <- filter(targets_file,str_detect(cells, "COLO"))$sample_name
-#filtering
-keep.exprs_COLO <- filterByExpr.DGEList(dgl_COLO_fc, design = design_COLO)
-dgl_COLO_fc_filt <- dgl_COLO_fc[keep.exprs_COLO,,keep.lib.sizes=FALSE]
-
-#normalization
-cpm_COLO_fc_norm <- dgl_COLO_fc_filt %>% 
-  cpm(normalized.lib.sizes = TRUE,
-      log = FALSE,
-      prior.count = 2) %>% 
-  as_tibble(rownames = "sncRNA") 
-
-# Salmon -----------------------------------------------------------------------
-# import only the COLO files
-files_salm_COLO <- files_salm[names(files_salm) %in% as.character(dgl_COLO_fc_filt$samples$run_accession)]
-
-# tximport
-txi <- tximport::tximport(files_salm_COLO, type = "salmon",
-  txOut = TRUE, countsFromAbundance = "lengthScaledTPM")
-# DGElist
-# from https://bioconductor.org/packages/release/bioc/vignettes/tximport/inst/doc/tximport.html
-# we follow the instructions to import for edgeR 
-cts <- txi$counts
-normMat <- txi$length
-
-# change the colnames of the salmon objects
-identical(as.character(dgl_COLO_fc_filt$samples$run_accession),colnames(cts))
-colnames(cts) <- dgl_COLO_fc_filt$samples$sample_name
-colnames(normMat) <- dgl_COLO_fc_filt$samples$sample_name
-
-# Obtaining per-observation scaling factors for length, adjusted to avoid
-# changing the magnitude of the counts
-normMat <- normMat/exp(rowMeans(log(normMat)))
-normCts <- cts/normMat
-
-# Computing effective library sizes from scaled counts, to account for
-# composition biases between samples
-eff.lib <- calcNormFactors(normCts) * colSums(normCts)
-
-# Combining effective library sizes with the length factors, and calculating
-# offsets for a log-link GLM
-normMat <- sweep(normMat, 2, eff.lib, "*")
-normMat <- log(normMat)
-
-# Creating a DGEList object for use in edgeR.
-dgl_salmon_COLO <- DGEList(cts, 
-                           samples = targets_file %>% filter(str_detect(cells, "COLO"))) %>% 
-  scaleOffset(normMat) 
-# remove objects.
-rm(cts, normCts, normMat, txi)
-
-keep.exprs_COLO_sal <- filterByExpr.DGEList(dgl_salmon_COLO, design = design_COLO)
-dgl_salmon_COLO_filt <- dgl_salmon_COLO[keep.exprs_COLO_sal,,keep.lib.sizes=FALSE]
-
-#normalization
-cpm_salmon_COLO_norm <- dgl_salmon_COLO_filt %>% 
-  cpm(normalized.lib.sizes = TRUE,
-      log = FALSE,
-      prior.count = 2) %>% 
-  as_tibble(rownames = "sncRNA") 
-
-# join the two methods ---------------------------------------------------------
-CPM_COLO_fc_salmon <- bind_rows("FeatureCounts" = cpm_COLO_fc_norm,
-                                "salmon" = cpm_salmon_COLO_norm,
-                                .id = "method") 
+# create a dataset with cpm values for both methods of COLO205 samples
+cpm_COLO_norm <- names(filtered_dgls) %>% set_names() %>% 
+  map(~filtered_dgls[[.x]] %>% 
+        cpm(normalized.lib.sizes = TRUE, log = FALSE, prior.count = 2) %>% 
+        as_tibble(rownames = "sncRNA") %>% 
+        select(sncRNA, contains("COLO205"))
+      ) %>% 
+  bind_rows(.id = "method")
 ```
-### ii. Load the samples of testis
+### ii. Testis samples
 
 ```{r Dataset Testis FC, salmon}
-# Featurecounts ----------------------------------------------------------------
-# divide the primary FC dataset
-dgl_testis_fc <- DGEList(counts = fc$counts[, str_detect(colnames(fc$counts), "Testis|testis")],
-               samples =  targets_file %>% filter(str_detect(cells, "Testis|testis")))
-
-group_testis_fc <- filter(targets_file, str_detect(cells, "Testis|testis"))$group %>% droplevels()
-#design matrix
-design_testis <- model.matrix(~0 + group_testis_fc)
-
-colnames(design_testis) <- colnames(design_testis) %>% 
-  str_remove("..+_fc") 
-
-rownames(design_testis) <- filter(targets_file,str_detect(cells, "Testis|testis"))$sample_name
-#filtering
-keep.exprs_testis <- filterByExpr.DGEList(dgl_testis_fc, design = design_testis)
-dgl_testis_fc_filt <- dgl_testis_fc[keep.exprs_testis,,keep.lib.sizes=FALSE]
-
-#normalization
-cpm_testis_fc_norm <- dgl_testis_fc_filt %>% 
-  cpm(normalized.lib.sizes = TRUE,
-      log = FALSE,
-      prior.count = 2) %>% 
-  as_tibble(rownames = "sncRNA") 
-
-# Salmon -----------------------------------------------------------------------
-# import only the testis files
-files_salm_testis <- files_salm[names(files_salm) %in% as.character(dgl_testis_fc_filt$samples$run_accession)]
-
-# tximport
-txi <- tximport::tximport(files_salm_testis, type = "salmon",
-  txOut = TRUE, countsFromAbundance = "lengthScaledTPM")
-# DGElist
-# from https://bioconductor.org/packages/release/bioc/vignettes/tximport/inst/doc/tximport.html
-# we follow the instructions to import for edgeR 
-cts <- txi$counts
-normMat <- txi$length
-
-# change the colnames of the salmon objects
-identical(as.character(dgl_testis_fc_filt$samples$run_accession),colnames(cts))
-colnames(cts) <- dgl_testis_fc_filt$samples$sample_name
-colnames(normMat) <- dgl_testis_fc_filt$samples$sample_name
-
-# Obtaining per-observation scaling factors for length, adjusted to avoid
-# changing the magnitude of the counts
-normMat <- normMat/exp(rowMeans(log(normMat)))
-normCts <- cts/normMat
-
-# Computing effective library sizes from scaled counts, to account for
-# composition biases between samples
-eff.lib <- calcNormFactors(normCts) * colSums(normCts)
-
-# Combining effective library sizes with the length factors, and calculating
-# offsets for a log-link GLM
-normMat <- sweep(normMat, 2, eff.lib, "*")
-normMat <- log(normMat)
-
-# Creating a DGEList object for use in edgeR.
-dgl_salmon_testis <- DGEList(cts, 
-                           samples = targets_file %>% filter(str_detect(cells, "Testis|testis"))) %>% 
-  scaleOffset(normMat) 
-# remove objects.
-rm(cts, normCts, normMat, txi)
-
-keep.exprs_testis_sal <- filterByExpr.DGEList(dgl_salmon_testis, design = design_testis)
-dgl_salmon_testis_filt <- dgl_salmon_testis[keep.exprs_testis_sal,,keep.lib.sizes=FALSE]
-
-#normalization
-cpm_salmon_testis_norm <- dgl_salmon_testis_filt %>% 
-  cpm(normalized.lib.sizes = TRUE,
-      log = FALSE,
-      prior.count = 2) %>% 
-  as_tibble(rownames = "sncRNA") 
-
-# join the two methods ---------------------------------------------------------
-CPM_testis_fc_salmon <- bind_rows("FeatureCounts" = cpm_testis_fc_norm,
-                                "salmon" = cpm_salmon_testis_norm,
-                                .id = "method") 
-
+# create a dataset with cpm values for both methods of Testis samples
+cpm_Testis_norm <- names(filtered_dgls) %>% set_names() %>% 
+  map(~filtered_dgls[[.x]] %>% 
+        cpm(normalized.lib.sizes = TRUE, log = FALSE, prior.count = 2) %>% 
+        as_tibble(rownames = "sncRNA") %>% 
+        select(sncRNA, contains("estis"))
+      ) %>% 
+  bind_rows(.id = "method")
 ```
-### iii. Plot the cpm of spike-ins in COLO205 before and after treatment
+### iii. Plot the cpm of spike-ins in COLO205 , Testis before and after treatment
 
 ```{r barplot of spike ins}
-spikes_ins_plot <- full_join(CPM_COLO_fc_salmon , CPM_testis_fc_salmon, 
-                             by = c("method","sncRNA")) %>% 
+spikes_ins_COLO_plot <- cpm_COLO_norm %>% 
   filter(str_detect(sncRNA,"SS_")) %>% 
   pivot_longer(cols = -c(method, sncRNA)) %>% 
-  mutate(name = factor(name, levels = c("Non_treated_COLO205_1",
-                                        "Non_treated_COLO205_2",
-                                        "Non_treated_COLO205_3",
-                                        "Treated_COLO205_1",
-                                        "Treated_COLO205_2",
-                                        "Treated_COLO205_3",
-                                        "Non_treated_Testis_1",
-                                        "Treated_testis_1"))) %>% 
   ggplot(mapping = aes(x = sncRNA, y= value, fill = method)) +
   geom_bar(stat = "identity", position=position_dodge(), width=0.2) +
-  scale_x_discrete(name = "piRNA-like ~ spike-ins", guide = guide_axis(angle = 45)) + 
-  scale_y_continuous(name = "Counts per million", labels = scales::comma, breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_discrete(name = "piRNA-like ~ spike-ins", 
+                   guide = guide_axis(angle = 45)) + 
+  scale_y_continuous(name = "Counts per million", 
+                     labels = scales::comma, 
+                     breaks = scales::pretty_breaks(n = 10)) +
   theme_bw() +
   scale_fill_manual(values=c('#999999','#E69F00')) +
   facet_wrap(~ name, ncol = 3) 
 
-zoom_spikes_ins_plot <-spikes_ins_plot + coord_cartesian(ylim = c(0, 3000)) 
+spikes_ins_testis_plot <- cpm_Testis_norm %>% 
+  filter(str_detect(sncRNA,"SS_")) %>% 
+  pivot_longer(cols = -c(method, sncRNA)) %>% 
+  ggplot(mapping = aes(x = sncRNA, y= value, fill = method)) +
+  geom_bar(stat = "identity", position=position_dodge(), width=0.2) +
+  scale_x_discrete(name = "piRNA-like ~ spike-ins", 
+                   guide = guide_axis(angle = 45)) + 
+  scale_y_continuous(name = "Counts per million", 
+                     labels = scales::comma, 
+                     breaks = scales::pretty_breaks(n = 10)) +
+  theme_bw() +
+  scale_fill_manual(values=c('#999999','#E69F00')) +
+  facet_wrap(~ name, ncol = 3) 
 
-pdf(file.path(dirname(dat_path[1]), "spike_ins_Testis_COLO205_treat_FC_salmon.pdf"))
-spikes_ins_plot
-zoom_spikes_ins_plot
+zoom_spikes_ins_COLO_plot <- spikes_ins_COLO_plot + coord_cartesian(ylim = c(0, 5000)) 
+zoom_spikes_ins_testis_plot <- spikes_ins_testis_plot + coord_cartesian(ylim = c(0, 5000)) 
+
+pdf(file.path(dirname(dat_path[1]), "spike_ins_treat_FC_salmon.pdf"))
+spikes_ins_COLO_plot
+zoom_spikes_ins_COLO_plot
+spikes_ins_testis_plot
+zoom_spikes_ins_testis_plot
 dev.off()
+
 ```
-### iv. BoxPlot of the cpm of piRNAs in COLO205 and Testis before and after treatment
+### iii. BoxPlot of piRNAs in COLO205 and Testis before and after treatment
 
 ```{r boxplot of piRNAs}
-
 # function for summarizing stats
 my_quantile <- function(x) {
   tibble(
@@ -892,7 +641,7 @@ my_quantile <- function(x) {
     sd = sd(x, na.rm = TRUE))
 }
 
-piRNAs_COLO_testis <- full_join(CPM_COLO_fc_salmon , CPM_testis_fc_salmon, 
+piRNAs_COLO_testis <- full_join(cpm_COLO_norm , cpm_Testis_norm, 
                              by = c("method","sncRNA")) %>% 
   left_join(complete_biotypes_seqs) %>% # found in 15. paragraph
   filter(str_detect(gene_type,"piRNA")) %>% 
@@ -903,10 +652,7 @@ piRNAs_COLO_testis <- full_join(CPM_COLO_fc_salmon , CPM_testis_fc_salmon,
 piRNAs_COLO_testis%>% 
   group_by(name) %>% 
   summarise(my_quantile(value))
-
-
-piRNAs_plot <- piRNAs_COLO_testis %>% 
-  mutate(name = factor(name, levels = c("Non_treated_COLO205_1",
+mutate(name = factor(name, levels = c("Non_treated_COLO205_1",
                                         "Non_treated_COLO205_2",
                                         "Non_treated_COLO205_3",
                                         "Treated_COLO205_1",
@@ -914,6 +660,8 @@ piRNAs_plot <- piRNAs_COLO_testis %>%
                                         "Treated_COLO205_3",
                                         "Non_treated_Testis_1",
                                         "Treated_testis_1"))) %>% 
+
+piRNAs_plot <- piRNAs_COLO_testis %>% 
   filter(value < 100) %>% 
   ggplot(mapping = aes(x = gene_type, y= value, fill = method)) +
   geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.alpha = 0.1, 
@@ -924,16 +672,9 @@ piRNAs_plot <- piRNAs_COLO_testis %>%
                      breaks = scales::pretty_breaks(n = 10)) +
   theme_bw() +
   scale_fill_manual(values=c('#999999','#E69F00')) +
-  facet_wrap(~ name, ncol = 3) 
+  facet_wrap(~name, ncol = 3) 
 
 pdf(file.path(dirname(dat_path[1]), "piRNAs_bxplot_Testis_COLO205_treat_FC_salmon.pdf"))
 piRNAs_plot
 dev.off()
-```
-
-
-## Finally we exit the docker container 
-```{bash exit docker}
-# exit docker container
-exit
 ```
