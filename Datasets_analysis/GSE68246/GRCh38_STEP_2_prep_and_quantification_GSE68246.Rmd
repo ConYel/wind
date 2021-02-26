@@ -79,8 +79,8 @@ for fn in "${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz;
 do  samp=`basename ${fn}`;   
 regex="${samp%%.trimmed.fastq.gz}";   
 echo "Processing sample ${samp} start: $(date)";   
-salmon quant -i my_data/human_data/indexes/GRCh38_v34_spike_ins_salmon  \
--l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 12 \
+salmon quant -i my_data/human_data/indexes/GRCh38_v34_public_salmon  \
+-l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 6 \
 --validateMappings --writeMappings="${ANALYSIS_FOLDER}/quants/${regex}.sam" \
 -o "${ANALYSIS_FOLDER}/quants/${regex}_quant"; 
 echo "end:$(date)";
@@ -93,7 +93,7 @@ for file in "${ANALYSIS_FOLDER}"/quants/*.sam;
 do 
 regex="${file%%.sam}";
 echo "Processing sample ${regex} start: $(date)"; 
-echo samtools view -O bam -o ${regex}.bam -@ 8 ${file};
+echo samtools view -O bam -o ${regex}.bam -@ 6 ${file};
 echo "end:$(date)";
 done
 # remove all .sam files
@@ -109,9 +109,9 @@ do
 samp=`basename ${file}`; 
 regex="${samp%%.trimmed.fastq.gz}"; 
 echo "Processing sample ${samp} start: $(date)"; 
-STAR --genomeDir my_data/human_data/indexes/GRCh38_v34_spike_ins_STAR \
+STAR --genomeDir my_data/human_data/indexes/GRCh38_v34_public_STAR \
 --genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat \
---runThreadN 12 --alignIntronMax 1 --outSAMattributes NH HI NM MD \
+--runThreadN 6 --alignIntronMax 1 --outSAMattributes NH HI NM MD \
 --outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate \
 --limitBAMsortRAM 40000000000 --outReadsUnmapped Fastx \
 --outFilterMismatchNmax 1 --outFilterMatchNmin 14 \
@@ -145,7 +145,7 @@ list.BAM <- list.files(path = file.path(ANALYSIS_FOLDER, "star"),
                        recursive = TRUE, 
                        full.names = TRUE)
 
-path_gtf <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.gtf")
+path_gtf <- file.path("human_data","sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf")
 todate <- format(Sys.time(), "%d_%b_%Y")
 
 fc <- featureCounts(files = list.BAM,
@@ -153,7 +153,7 @@ fc <- featureCounts(files = list.BAM,
                     isGTFAnnotationFile = TRUE,
                     GTF.featureType = "exon",
                     GTF.attrType.extra = c("gene_type", "sRNA_id", "seq_RNA"),
-                    nthreads = 13,
+                    nthreads = 6,
                     useMetaFeatures = TRUE,
                     allowMultiOverlap = TRUE,
                     minOverlap = 10,
