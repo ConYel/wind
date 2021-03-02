@@ -233,7 +233,7 @@ design <- model.matrix(~0 + targets_file$group)
 colnames(design) <- colnames(design) %>% 
   str_remove("targets_file\\$group") 
 rownames(design) <- targets_file$sample_name
-design_2 <- model.matrix(~0 + targets_file$group + targets_file$cells + targets_file$batch)
+design_2 <- model.matrix(~0 + targets_file$group + targets_file$batch)
 colnames(design_2) <- colnames(design_2) %>% 
   str_remove("targets_file\\$group") %>% 
   str_remove("targets_file\\$batch") %>% 
@@ -482,7 +482,7 @@ function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 5
                   name=colnames(dgl_norm_data[[norm_method]]$counts))
   
   # create batch if it exists
-  if(dgl_norm_data[[norm_method]]$samples$batch){
+  if(dgl_norm_data[[norm_method]]$samples$batch[1]){
     d$batch <- dgl_norm_data[[norm_method]]$samples$batch %>% as_factor
     p <-  ggplot(data=d, 
                  aes_string(x="PC1", 
@@ -490,6 +490,7 @@ function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 5
                             color="batch", 
                             shape="group"))
   }else{
+  print("There is no batch we use only the groups")
   p <- ggplot(data=d, aes_string(x="PC1", y="PC2", shape="group"))
   }
   

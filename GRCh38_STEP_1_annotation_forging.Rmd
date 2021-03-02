@@ -547,7 +547,7 @@ to be as strict as possible is used
 
 We filter the GRs that are found inside protein coding of CDS and exon tags
 
-```{r filtering proteing coding GRs}
+```{r filtering protein coding GRs}
 gene_annot <- here("human_data", "GRCh38", "gencode.v34.primary_assembly.annotation.gtf.gz") %>% 
   read_gff2()
 

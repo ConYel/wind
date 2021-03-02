@@ -378,7 +378,7 @@ norm_dgls <- filtered_dgls %>%
   do_not_print <- map2( .x = norm_dgls, .y = dat_path, 
     ~write_rds(.x, file = file.path(.y, str_glue("list_norm_dgls_{basename(.y)}.rds"))))
 ```
-## 15. Compare groups between FeatureCounts and salmon results
+## 12. Compare groups between FeatureCounts and salmon results
 
 ```{r cpm venn comparison}
 function_comp_groups <- function(dgl_norm_data, tool){
@@ -435,7 +435,7 @@ all_exprs_cpm_TMM %>%
               values_from = "value") %>% 
   write_tsv(file.path(dirname(dat_path[1]),"salmon_FC_cpm_union_top100.txt"))
 ```
-## 16. Histograms of length per gene_type (sncRNA category)
+## 13. Histograms of length per gene_type (sncRNA category)
 ### i. Make a table with the expressed gene_types per method
 
 ```{r stats_gene_types}
@@ -515,7 +515,7 @@ hist_tbl$gene_type %>%
       )
 dev.off()
 ```
-## 17. Sequence logos
+## 14. Sequence logos
 
 ```{r sequences logos}
 # sequences logos -----
@@ -556,9 +556,9 @@ map(.x = sample_groups,
            alpha = .1, col='black', fill='yellow')
   )
 dev.off()
-1
+
 ```
-## 18. plots and tables regarding piRNAs and spike-ins
+## 15. plots and tables regarding piRNAs and spike-ins
 Use two different datasets, one for testis, one fore COLO205
 ### i. COLO205 samples
 We slice the filtered primary dataset and we use normalization per each sample, thus only within sample norm.
@@ -584,7 +584,7 @@ cpm_Testis_norm <- names(filtered_dgls) %>% set_names() %>%
       ) %>% 
   bind_rows(.id = "method")
 ```
-### iii. Plot the cpm of spike-ins in COLO205 , Testis before and after treatment
+### iii. Plot the cpm of spike-ins in COLO205, Testis before and after treatment
 
 ```{r barplot of spike ins}
 spikes_ins_COLO_plot <- cpm_COLO_norm %>% 
