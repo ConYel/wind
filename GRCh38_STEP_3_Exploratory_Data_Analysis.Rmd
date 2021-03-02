@@ -683,12 +683,44 @@ groups %>% map2(list(FC_groups),
   ggtitle(str_glue("FeatureCounts_{.x}")))  
 dev.off()
 ```
-## 18. Reads info and histograms
+## 18. Histograms of reads' length and general information  
 ### i. extract the information of length for reads
-Here we need to collapse the the information that it can be extracted from the bam files
-of aligned reads, we use the docker of sncrna_workflow to perform it.
+Get the reads from FeatureCounts resulted bam and collapse them per length and count.
+
 ```{bash Reads info}
-## filter for reads of 15-49 bases
+# note that pwd is the dir of wind/
+docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
+ANALYSIS_FOLDER="my_data/Datasets_analysis/GSE68246"
+
+## find length of reads from STAR - featureCounts
+#cut -f1 my_data/piRNAs_hist.txt > my_data/piRNA_ids.txt | grep -F -w -f my_data/piRNA_ids.txt  -
+
+for file in $ANALYSIS_FOLDER/star/*featureCounts.bam; 
+do
+where_to_save=`dirname ${file}`; 
+regex=`basename ${file}`; 
+samp="${regex%%.sortedByCoord.out.bam.featureCounts.bam}";
+echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/${samp}_hist.txt";  
+samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$18}'| sed 's/XT:Z://g'  | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist.txt;
+echo "end:$(date)"; 
+done
+
+## find length of reads from salmon
+for file in $ANALYSIS_FOLDER/quants/*.bam;  
+do 
+where_to_save=`dirname ${file}`;  
+regex=`basename ${file}`;  
+samp="${regex%%.trimmed*}";  
+echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/${samp}_hist_allRNA.txt"; 
+samtools view  -@ 4 ${file} | awk 'BEGIN{FS=OFS="\t"}{print $1,length($10),$3}'| sort -k1,1 | bedtools groupby -g 1 -c 2,3 -o first,distinct -delim "," | cut -f2,3 | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_allRNA.txt; 
+echo "end:$(date)"; 
+done
+
+###### -----------
+## if it want to make only for reads aligning to piRNA uniquely or multimapped
+samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$3}'| grep -F -w -f my_data/piRNA_ids.txt  - | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_pirna.txt;
+###### ------------
+## if we wanted only reads of of 15-49 bases
 for file in my_data/star_results/*/*_sorted.bam; 
 do
 where_to_save=`dirname ${file}`; 
@@ -698,73 +730,109 @@ echo "Processing sample ${samp} start: $(date)";
 samtools view -h -@ 6 ${file} | awk 'length($10) > 14 && length($10) < 50 || $1 ~ /^@/' | samtools view -bS - >  ${where_to_save}/${samp}_filt_15_49_sorted.bam;
 echo "end:$(date)"; 
 done
-
-## find length of reads from STAR - featureCounts
-#cut -f1 my_data/piRNAs_hist.txt > my_data/piRNA_ids.txt | grep -F -w -f my_data/piRNA_ids.txt  -
-
-for file in my_data/spike_ins/star_results/*.featureCounts.bam; 
-do
-where_to_save=`dirname ${file}`; 
-regex=`basename ${file}`; 
-samp="${regex%%.trimmed_sorted.bam.featureCounts.bam}"; 
-echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/${samp}_hist.txt";  
-samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$18}'| sed 's/XT:Z://g'  | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist.txt;
-echo "end:$(date)"; 
-done
-
-## find length of reads from salmon
-for file in my_data/quants/*.fastq.gz.bam;  
-do 
-where_to_save=`dirname ${file}`;  
-regex=`basename ${file}`;  
-samp="${regex%%.trimmed*}";  
-echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/${samp}_hist_allRNA.txt"; 
-samtools view  -@ 2 ${file} | awk 'BEGIN{FS=OFS="\t"}{print $1,length($10),$3}'| sort -k1,1 | bedtools groupby -g 1 -c 2,3 -o first,distinct -delim "," | cut -f2,3 | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_allRNA.txt; 
-echo "end:$(date)"; 
-done
-
-## if it was to make only for piRNA
-samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$3}'| grep -F -w -f my_data/piRNA_ids.txt  - | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_pirna.txt;
-
 ```
-### ii. make a txt file with the info
-here we return to the Rstudio docker in order to perform the visualization
-```{r}
-library(tidyverse)
-hist_all_RNA <- list.files(path = "../genome_transc_human/quants", 
-                           pattern = "hist_allRNA.txt", 
-                           full.names = T) %>% 
-  vroom::vroom(id = "file", col_names = c("read_count", "read_length", "smallRNA")) %>% 
-  mutate(file = basename(file) %>% str_remove("_hist_all.+"))
-  
-```
-### iii. ggplot for histograms
 
-```{r ggplots hist reads}
+### ii. import the files with reads length
+Return to the Rstudio docker in order to perform the visualization
+```{r objects per method of reads length}
 library(tidyverse)
 library(plyranges)
-#piRNAs_hist <- read_tsv("piRNAs_hist.txt")
-#  gtf_piB_RCentr <- read_gff2("mouse_data/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_mm10.gtf") %>% 
-  as_tibble() %>% 
-  select(gene_id,gene_type) %>% 
-  distinct(gene_id, .keep_all = T) %>% 
-    mutate(gene_type = as_factor(gene_type))
-# featureCounts(FC) and salmon files -------
-hist_files_fc <- list.files(path ="mouse_datasets/star_results",
-                         pattern = "_hist.txt", 
-                         recursive = TRUE, full.names = TRUE) %>% 
-    set_names(. %>% 
-                basename() %>%
-                str_remove("_hist.txt")
-              )
 
-hist_files_salmon <- list.files(path ="mouse_datasets/quants",
-                         pattern = "_hist_allRNA.txt", 
-                         recursive = TRUE, full.names = TRUE) %>% 
-    set_names(. %>% 
-                basename() %>%
-                str_remove("_hist_allRNA.txt")
-              )
+##### piRNAs_hist <- read_tsv("piRNAs_hist.txt")
+
+# a function for quantile summarization
+my_quantile <- function(x) {
+  tibble(
+    min = min(x),
+    q1 = quantile(x, 0.25), 
+    mean = mean(x),
+    median = median(x),
+    q3 = quantile(x, 0.75),
+    max = max(x),
+    sd = sd(x))
+}
+# here we use the complete_biotypes_seqs object from paragraph 15.
+complete_biotypes_seqs %>% select("smallRNA" = sncRNA, gene_type)
+# 1 read per entry
+
+## salmon ----
+hist_all_RNA_sal <- list.files(
+  path = file.path("Datasets_analysis", "GSE68246", "quants"),#find the files
+  pattern = "hist_allRNA.txt",
+  full.names = TRUE) %>% 
+  vroom::vroom(id = "file", # import them with vroom
+               col_names = c("read_count", "read_length", "smallRNA")) %>% 
+  mutate(file = basename(file) %>% str_remove_all(".bam|_hist_all.+"),
+         method = "salmon")
+## featurecounts ----
+hist_all_RNA_fc <- list.files(
+  path = file.path("Datasets_analysis", "GSE68246", "star"),  
+  pattern = "hist.txt", 
+  full.names = TRUE) %>% 
+  vroom::vroom(id = "file", 
+               col_names = c("read_count", "read_length", "smallRNA")) %>% 
+  # add information regarding multimapping reads and clean filenames
+  mutate(file = basename(file) %>% str_remove_all("_Aligned.+"),
+         smallRNA = if_else(condition = is.na(smallRNA),
+                            true = "Not_assigned",
+                            false = smallRNA),
+         method = "fc"
+         )
+## make one object with both methods --------
+hist_all_RNA <- bind_rows(hist_all_RNA_sal, hist_all_RNA_fc) %>% 
+  mutate(Alignment = case_when(
+           smallRNA == "Not_assigned" ~ "Not_assigned",
+           str_detect(smallRNA, ",") ~ "Multimapped" ,
+           TRUE ~ "Unique" )) %>% 
+  splitstackshape::cSplit(splitCols = "smallRNA", #HERE WE SPLIT TO MULTIPLE READS PER ENTRY
+                          sep = ",", 
+                          direction = "long") %>% 
+  left_join(complete_biotypes_seqs %>% select("smallRNA" = sncRNA, gene_type))
+
+### check range of length for each sample per method
+hist_all_RNA %>% group_by(method, file) %>% 
+  summarise(my_quantile(read_length)) 
+### check how many reads per method and sample have been aligned
+hist_all_RNA %>% group_by(method, file) %>% summarise(all_reads = sum(read_count))
+```
+### iii. make histograms
+
+```{r make histograms per sample}
+biotypes_forhist <- hist_all_RNA %>% 
+  filter(gene_type != "NA") %>% 
+  dplyr::count(gene_type) %>% 
+  .$gene_type %>% 
+  set_names() 
+
+my_hist_plot <- biotypes_forhist %>% 
+  map(~ hist_all_RNA %>%
+        filter(Alignment != "Not_assigned", # remove not aligned reads
+               gene_type == .x
+               ) %>% 
+        ggplot() +
+        geom_bar(mapping =
+                   aes(x = read_length,
+                       y = read_count, 
+                       fill = Alignment),
+                 position = "dodge",
+                 stat = "identity") +
+        scale_y_continuous(labels = scales::comma) +
+        #coord_cartesian(ylim = c(0,100000))+
+        theme_bw() +
+        ggtitle(.x) +
+        facet_wrap(method~file, ncol = 3) +
+        theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+       )
+
+pdf(file.path(dirname(dat_path[1]), "salmon_FC_reads_length_grouped.pdf"))
+my_hist_plot
+dev.off()
+
+
+```
+
+### iv.reads_stats
+```{r ggplots hist reads}
 #FC reads info----
 ## add the regex of smallRNA names
 smallRNA_Categ_regex <- levels(gtf_piB_RCentr$gene_type) %>% 
@@ -804,7 +872,7 @@ reads_info_fc <- function(df, Categ_regex_list){
 }
 
 
-## read the hist files and add information about multi-mapped reads them 
+## read the hist files and add information about multi-mapped reads  
 df_list <- hist_files_fc %>% 
   map(~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
   mutate(Length = as_factor(Length),
@@ -1015,15 +1083,6 @@ test_mut_reads %>% head %>%
   mutate_at(vars(starts_with("V")), ~map_chr(.,get_gene_type)) 
 
 ```
-## 19. Ping-pong signal plot
-```{r}
-annot_tbl <- read_gff2("../genome_transc_human/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
-  filter(gene_type == "piRNA")
-# load the expressed piRNA
-top_100_pirna <- read_tsv("Breast_Cancer_Ductal_lobular_BRCA-US/ExpDatAnalysis_BRCA_cancer_sa_hg38_12_Nov_2020/salmon_FC_cpm_union_top100.txt")
-
-```
-
 Finally we exit the docker container
 ```{bash exit docker}
 # exit docker container
