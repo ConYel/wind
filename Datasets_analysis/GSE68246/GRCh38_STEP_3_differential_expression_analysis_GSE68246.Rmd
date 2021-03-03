@@ -91,9 +91,6 @@ If we load the voom object we can extract the design matrix otherwise we can cre
 design <- salmon_vm_QW_TMM$design
 #or dgl object
 targets <- salmon_edgR_TMM$samples
-design <- model.matrix(~0 + targets$group , data = targets)
-colnames(design) <- colnames(design) %>% 
-  str_remove(".+\\$group")
 ```
 ## 4. EdgeR
 Perform the analysis with edgeR TMM normalization for both salmon and featurecounts
@@ -101,8 +98,9 @@ Perform the analysis with edgeR TMM normalization for both salmon and featurecou
 ```{r edgeR_DE}
 # design ----
 colnames(design) # check the names and make the contrasts
+colnames(design) <- c("MCF_7_Monolayer", "MCF_7_Spheroid",  "batch2", "batch3")
 con_mat <- makeContrasts(
-  Spheroid_Mono = MCF_7_Sphe - MCF_7_Mono,
+  Spheroid_Mono = MCF_7_Spheroid - MCF_7_Monolayer,
   levels = design)
 
 ## salmon ----
@@ -234,7 +232,7 @@ fc_vm_QW_TMM_p <- fc_DES[[1]] %>%
   select(smallRNA , fc_voomQ )
 
 # venn diagram for salmon/fc limma -----
-nc_RNA_categories <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
+nc_RNA_categories <- file.path("human_data","sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
   plyranges::read_gff2() %>% 
   as_tibble() %>% 
   select(gene_id, gene_type) %>% 
@@ -249,6 +247,7 @@ vennDiagram(results,
     counts.col=c("red", "blue"),
     circle.col = c("red", "blue", "green3"))
 dev.off()
+
 # join both results ----
 identical(fc_DES %>% names(), salmon_DES %>% names)
 
@@ -293,7 +292,7 @@ public_res <- bind_rows(public_res_up,public_res_down) %>%
   rename_all(.funs = ~ .x %>% str_c("_public_res"))
 
 ## import the sequences from the GTF file -----
-smallRNAs_gtf <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
+smallRNAs_gtf <- file.path("human_data","sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
   plyranges::read_gff2() %>% 
   as_tibble() %>% 
   select(gene_id,  seq_RNA,gene_type) %>% 
@@ -443,9 +442,9 @@ ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
         row_dend_reorder = TRUE
 )
 
-draw(ht_1 + ht_1_lFCs,
-     column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),
-     merge_legend = TRUE)
+#draw(ht_1 + ht_1_lFCs,
+#     column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),
+#     merge_legend = TRUE)
 
 tiff(filename = file.path(dirname(dat_path[1]),"GSE68246_spheroid_vs_mono_heatmap_FC.tiff"),
      compression = "none", height = 10, width = 14,  units = 'in', res = 300)
