@@ -46,7 +46,7 @@ todate <- format(Sys.time(), "%d_%b_%Y")
 my_basename <- file.path("Datasets_analysis", "TCGA_BRCA") ## INPUT name of the main folder 
 my_exp <- "Breast_Cancer_TCGA" ## INPUT name of the analysis
 genome_input <- "GRCh38" ## INPUT genome version here
-my_tools <- c("salmon","featureCounts")
+my_tools <- c("salmon", "featureCounts")
 dat_path <- file.path(my_basename, str_glue("DEA_{my_exp}_{genome_input}_{todate}"),
                       my_tools) %>% set_names(my_tools)
 dat_path %>% map(~dir.create(., recursive = TRUE))
@@ -155,7 +155,7 @@ fc_edgeR_TMM_p <- DE_FC_edgR[[1]] %>%
 results <-  salmon_edgeR_TMM_p %>% 
   inner_join(fc_edgeR_TMM_p) %>%  select(-smallRNA)
 
-pdf(file.path(dirname(dat_path[1]), "venn_diagram_DE_salmon_fC_edgeR.pdf"))
+pdf(file.path(dirname(dat_path[1]), str_c("venn_diagram_DE_salmon_fC_edgeR_",names(DE_salmon_edgR[1]),".pdf")))
 vennDiagram(results, 
     include=c("up", "down"),
     counts.col=c("red", "blue"),
@@ -262,13 +262,7 @@ map2(fc_DES, salmon_DES, ~.x %>%
   write_tsv(file.path(dirname(dat_path[1]),str_c("all_comparisons_voom_QW_TMM_salmon_fc_LFCs_", todate,".txt")))
 
 ```
-## 6. Compare the DE results with public results
-
-```{r}
-#create the file with names and rnacentral ids -----
-
-```
-# 7. Find predicted targets
+# 6. Find predicted targets
 
 ```{r}
 suppressPackageStartupMessages(library(plyranges))
@@ -285,7 +279,7 @@ targets_all <- read_tsv("../genome_transc_human/human_data/piRNA_predicted_Targe
 targets_DEs_keep <- all_comp %>% unite(piRNA_id, c(RNAcentral_id, GR),sep = "_GR_") %>% filter(gene_type == "piRNA") %>% inner_join(targets_all) %>% 
   write_tsv("Breast_Cancer_TCGA/DEA_BRCA_06_Oct_2020/DE_targets_predicted.txt")
 ```
-# 8. Make a heatmap of differential expressed piRNAs
+# 7. Make a heatmap of differential expressed piRNAs
 ### i. Load the libraries
 
 ```{r heatmap libraries}
@@ -304,27 +298,17 @@ piRNAs_DE <- list.files(path = dirname(dat_path[1]),
   filter(gene_type == "piRNA",
          across(.cols = contains("adj.P.Val"), 
                 .fns = ~ .x < 0.05)) %>% 
-  dplyr::select(smallRNA, contains("logFC"))
+  dplyr::select(smallRNA, contains("logFC")) %>% 
+  filter((logFC_Tumour_Normal_FC > 0 & logFC_Tumour_Normal_salmon > 0) |
+           (logFC_Tumour_Normal_FC < 0 & logFC_Tumour_Normal_salmon < 0))
   
 
 # load the piRNA expression matrix----
 ## featurecounts
-fc_list <- "list_norm_dgls_featureCounts.rds" %>% 
-  read_rds() %>% 
-  .[["TMM"]] 
-
-fc_cpm <- fc_list  %>% 
-  cpm(log =TRUE) %>%
+fc_cpm <- fc_norm %>% 
+  .[["TMM"]] %>% 
+   cpm(log =TRUE) %>%
   .[rownames(.) %in% piRNAs_DE$smallRNA,] 
-
-## salmon
-salmon_list <- "list_norm_dgls_salmon.rds" %>% 
-  read_rds() %>% 
-  .[["TMM"]] 
-
-salmon_cpm <- salmon_list  %>% 
-  cpm(log =TRUE) %>%
-  .[rownames(.) %in% piRNAs_DE$smallRNA,]
 
 # make the matrices for the heatmap -----
 FC_mat_1 <- fc_cpm %>% 
@@ -332,12 +316,6 @@ FC_mat_1 <- fc_cpm %>%
 FC_mat_1 %>% dim()
 FC_mat_1 %>% head()
 hist(FC_mat_1)
-
-salmon_mat_1 <- salmon_cpm %>% 
-  t() %>% scale() %>% t()
-salmon_mat_1 %>% dim()
-salmon_mat_1 %>% head()
-hist(salmon_mat_1)
 
 # logFCS
 lfc_piRNAs_DE <- piRNAs_DE %>% 
@@ -350,18 +328,18 @@ hist(lfc_piRNAs_DE)
 
 lfc_piRNAs_DE <- lfc_piRNAs_DE[rownames(FC_mat_1) ,]
 
-colnames(FC_mat_1) <- colnames(FC_mat_1) %>% str_remove("-13_mirna_gdc_realn")
+colnames(FC_mat_1) <- colnames(FC_mat_1) %>% str_remove("_GR_")
 
 # add the Annotation ----
 #expression
-ha_1 <- HeatmapAnnotation(Group = fc_list$samples$group,
+ha_1 <- HeatmapAnnotation(Group = fc_norm[["TMM"]]$samples$group,
                           annotation_name_side = "left",
-                          col = list(Group = fc_list$colours %>% 
-                                       set_names(fc_list$samples$group)))
+                          col = list(Group =  fc_norm[["TMM"]]$colours %>% 
+                                       set_names( fc_norm[["TMM"]]$samples$group)))
 
 # lFCS
 ha_1_LFCs <- HeatmapAnnotation(Method = c("FeatureCounts", "salmon"),
-                              col = list(Method = wes_palettes$Moonrise2[c(1,4)] %>%
+                              col = list(Method = wes_palettes$Moonrise1[c(2,3)] %>%
                           set_names("FeatureCounts", "salmon")))
 
 ## Colours of heatmap -----
@@ -408,12 +386,12 @@ ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
         row_dend_reorder = TRUE
 )
 
-draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),
-     merge_legend = TRUE)
+#draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),
+#     merge_legend = TRUE)
 
-tiff("BRCA_tumour_vs_normal_heatmap_FC.tiff", 
+tiff(filename = file.path(dirname(dat_path[1]),"BRCA_TCGA_tumour_vs_normal_heatmap_FC.tiff"), 
      compression = "none", height = 10, width = 14,  units = 'in', res = 300)
-draw(ht_1+ht_1_lFCs,
+draw(ht_1 + ht_1_lFCs,
      column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"), 
      merge_legend = TRUE)
 dev.off()
