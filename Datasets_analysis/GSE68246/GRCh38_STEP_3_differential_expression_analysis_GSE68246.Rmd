@@ -47,7 +47,7 @@ todate <- format(Sys.time(), "%d_%b_%Y")
 my_basename <- file.path("Datasets_analysis", "GSE68246") ## INPUT name of the main folder 
 my_exp <- "Breast_Cancer_CSC" ## INPUT name of the analysis
 genome_input <- "GRCh38" ## INPUT genome version here
-my_tools <- c("salmon","featureCounts")
+my_tools <- c("salmon", "featureCounts")
 dat_path <- file.path(my_basename, str_glue("DEA_{my_exp}_{genome_input}_{todate}"),
                       my_tools) %>% set_names(my_tools)
 dat_path %>% map(~dir.create(., recursive = TRUE))

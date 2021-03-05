@@ -403,44 +403,107 @@ We rename the files to: "UTR3.fasta", "UTR5.fasta", "CDS.fasta"
 mkdir UTR3 CDS UTR5
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/bowtie_bowtie2
 #UTR3 index
-bowtie-build -f -o 3 --threads 8 my_data/UTR3_hg38.fasta my_data/UTR3/UTR3_hg38
+bowtie-build -f -o 3 --threads 8 my_data/human_data/piRNA_Targets/UTR3/UTR3_hg38.fasta my_data/human_data/piRNA_Targets/UTR3/UTR3_hg38
 
 #UTR5 index
-bowtie-build -f -o 3 --threads 8 my_data/UTR5_hg38.fasta my_data/UTR5/UTR5_hg38
+bowtie-build -f -o 3 --threads 8 my_data/human_data/piRNA_Targets/UTR5/UTR5_hg38.fasta my_data/human_data/piRNA_Targets/UTR5/UTR5_hg38
 
 #CDS index
-bowtie-build -f -o 3 --threads 8 my_data/CDS_hg38.fasta my_data/CDS/CDS_hg38
+bowtie-build -f -o 3 --threads 8 my_data/human_data/piRNA_Targets/CDS/CDS_hg38.fasta my_data/human_data/piRNA_Targets/CDS/CDS_hg38
 
 # UTR3 run
-bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/UTR3/UTR_hg38 -S -f \
-my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \ 
-samtools view -F 4 -@ 2 -  > my_data/res_UTR3.txt
+bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/human_data/piRNA_Targets/UTR3/UTR3_hg38 -S -f \
+my_data/human_data/piRNA_Targets/piRNAs_for_target_prediction_v0.2.fa | \
+samtools view -F 4 -@ 2 -  > my_data/human_data/piRNA_Targets/res_UTR3.txt
 
 # UTR5 run
-bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/UTR5/UTR5_hg38 -S -f \
-my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \
-samtools view -F 4 -@ 2 -  > my_data/res_UTR5.txt
+bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/human_data/piRNA_Targets/UTR5/UTR5_hg38 -S -f \
+my_data/human_data/piRNA_Targets/piRNAs_for_target_prediction_v0.2.fa | \
+samtools view -F 4 -@ 2 -  > my_data/human_data/piRNA_Targets/res_UTR5.txt
 
 # CDS run
-bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/CDS/CDS_hg38 -S -f \
-my_data/piRNAs_for_target_pred_Central_piRNAbank.fa | \
-samtools view -F 4 -@ 2 -  > my_data/res_CDS_hg38.txt
+bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/human_data/piRNA_Targets/CDS/CDS_hg38 -S -f \
+my_data/human_data/piRNA_Targets/piRNAs_for_target_prediction_v0.2.fa | \
+samtools view -F 4 -@ 2 -  > my_data/human_data/piRNA_Targets/res_CDS_hg38.txt
 ```
+
+### i. find the genomic regions 3', 5' UTR and CDS
+
+```{r CDS and UTR}
+library("BSgenome.Hsapiens.UCSC.hg38")
+library(tidyverse)
+library(plyranges)
+library(GenomicFeatures)
+
+# import the gencode gtf as TxDb
+genecode <- makeTxDbFromGFF(file = "human_data/GRCh38/gencode.v34.primary_assembly.annotation.gtf.gz",
+                            dataSource="gencode",
+                            organism = "Homo sapiens")
+
+CDS <- cdsBy(genecode, "tx", use.names = TRUE) %>% 
+  keepStandardChromosomes(pruning.mode = "tidy")
+UTR3 <- threeUTRsByTranscript(genecode, use.names = TRUE) %>% keepStandardChromosomes(pruning.mode = "tidy")
+UTR5 <- fiveUTRsByTranscript(genecode, use.names = TRUE) %>% keepStandardChromosomes(pruning.mode = "tidy")
+
+# get sequences
+CDS_seq <- Views(BSgenome.Hsapiens.UCSC.hg38, unlist(CDS))
+UTR3_seq <- Views(BSgenome.Hsapiens.UCSC.hg38, unlist(UTR3))
+UTR5_seq <- Views(BSgenome.Hsapiens.UCSC.hg38, unlist(UTR5))
+
+# make fasta files
+fasta_CDS_seq <- DNAStringSet(CDS_seq)
+fasta_UTR3_seq <- DNAStringSet(UTR3_seq)
+fasta_UTR5_seq <- DNAStringSet(UTR5_seq)
+
+# fix names to be unique for each sequence
+CDS_names <- CDS %>% 
+  unlist() %>% 
+  mutate(cds_name = str_c(names(.), "_exon_rank_", exon_rank)) %>% 
+  as_tibble() %>% 
+  dplyr::select(cds_name) 
+
+UTR3_names <- UTR3 %>% 
+  unlist() %>% 
+  as_tibble(rowna) %>% 
+  dplyr::select(exon_name) %>% filter(duplicated(exon_name))
+  
+
+  as_tibble(rownames = "names_tx") %>% select() %>% mutate(cds_name = str_c(group_name, exon_rank,))
+# export the fasta 
+fasta_CDS_seq %>% 
+  Biostrings::writeXStringSet(file.path("human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.fa"))
+
+targets_dirs <- c( "CDS", "UTR3", "UTR5") %>% 
+  file.path("human_data", "piRNA_Targets", .) 
+targets_dirs %>% 
+  map(~dir.create(., recursive = TRUE))      
+
+list("CDS" = fasta_CDS_seq,
+     "UTR3" = fasta_UTR3_seq,
+     "UTR5" = fasta_UTR5_seq) %>% 
+  map2(.y = targets_dirs, ~ Biostrings::writeXStringSet(x = .x, filepath = file.path(.y, str_c(basename(.y),"_hg38.fasta")))
+       )
+```
+
+
 ### i. make a fasta with only piRNA sequences
 
 ```{r piRNA fasta}
 library(tidyverse)
-ncRNA_gtf <- plyranges::read_gff2("ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
+piRNAs_gtf <- plyranges::read_gff2(file.path("human_data", "sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf")) %>% 
   filter(gene_type == "piRNA") %>% 
   as_tibble() %>% 
   distinct(gene_id, .keep_all = T) %>% 
-  select(gene_id, seq_RNA) %>% 
+  dplyr::select(gene_id, seq_RNA) %>%
   column_to_rownames("gene_id")
 
-piRNA_fa_hg38 <- Biostrings::DNAStringSet(ncRNA_gtf$seq_RNA)
-names(piRNA_fa_hg38) <- rownames(ncRNA_gtf)
+piRNA_fa_hg38 <- Biostrings::DNAStringSet(piRNAs_gtf$seq_RNA)
+names(piRNA_fa_hg38) <- rownames(piRNAs_gtf)
+
 piRNA_fa_hg38 %>% 
-Biostrings::writeXStringSet("piRNAs_for_target_pred_Central_piRNAbank.fa")
+Biostrings::writeXStringSet(file.path("human_data", 
+                                      "piRNA_Targets", 
+                                      "piRNAs_for_target_prediction_v0.2.fa"))
 ```
 ### ii. make a dataframe with all predicted gene targets
 
