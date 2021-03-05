@@ -526,7 +526,7 @@ c_piBNK_RCent_GR <- c_piBNK_RCent %>%
     width = as.numeric(width)) %>% 
   as_granges
 ```
-### ix.  Reclassifying to miscellaneous piRNA
+### ix.  Filtering piRNAs sequences inside other Genes
 
 Studies of Tosar et. al[1](https://pubmed.ncbi.nlm.nih.gov/33376191/) [2](https://pubmed.ncbi.nlm.nih.gov/30271890/) have demonstrated that some piRNAs
 sequences can been found inside other small non-coding RNAs or genes.
@@ -655,7 +655,7 @@ piRNAbank_rCentral_fasta <- piRNAbank_rCentral_fasta[!duplicated(piRNAbank_rCent
 
 ```{r export and save res}
 piRNAbank_rCentral_fasta %>% 
-  Biostrings::writeXStringSet("human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.fa")
+  Biostrings::writeXStringSet(file.path("human_data", "sncRNA_piRNBnk_RNACent_GRCh38_v34.fa"))
 
 gtf_piB_RCentr <- complete_piBnk_RCent %>% 
   as_tibble() %>% 
@@ -667,7 +667,7 @@ seqlevels(sInfo) <- seqlevels(gtf_piB_RCentr)
 seqinfo(gtf_piB_RCentr)<- sInfo
 
 gtf_piB_RCentr %>% 
-  write_gff2("human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf")
+  write_gff2(file.path("human_data", "sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf"))
 ```
 
 Until now, we have prepared the files for annotation and quantification (GTF, FASTA) 
