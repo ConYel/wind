@@ -395,9 +395,90 @@ test_mut_reads %>% head %>%
 
 ```
 ## 9. piRNA targets prediction
-Download the 3', 5' and CDS fasta files from [BioMart](http://www.ensembl.org/biomart/martview/4f27740c6690896f18b1bb0fb24011cd) for the genome of interest.
-We rename the files to: "UTR3.fasta", "UTR5.fasta", "CDS.fasta" 
-- first we have to make the indexes for bowtie
+Extract the 3', 5' and CDS from the primary GTF of GRCH38 Gencode
+### i. find the genomic regions 3', 5' UTR and CDS
+
+```{r CDS and UTR}
+library("BSgenome.Hsapiens.UCSC.hg38")
+library(tidyverse)
+library(plyranges)
+library(GenomicFeatures)
+
+# import the gencode gtf as TxDb
+genecode <- makeTxDbFromGFF(file = file.path("human_data", "GRCh38", "gencode.v34.primary_assembly.annotation.gtf.gz"),
+                            dataSource="gencode",
+                            organism = "Homo sapiens")
+
+CDS <- cdsBy(genecode, "tx", use.names = TRUE) %>% 
+  keepStandardChromosomes(pruning.mode = "tidy")
+UTR3 <- threeUTRsByTranscript(genecode, use.names = TRUE) %>% keepStandardChromosomes(pruning.mode = "tidy")
+UTR5 <- fiveUTRsByTranscript(genecode, use.names = TRUE) %>% keepStandardChromosomes(pruning.mode = "tidy")
+
+# get sequences
+CDS_seq <- Views(BSgenome.Hsapiens.UCSC.hg38, unlist(CDS))
+UTR3_seq <- Views(BSgenome.Hsapiens.UCSC.hg38, unlist(UTR3))
+UTR5_seq <- Views(BSgenome.Hsapiens.UCSC.hg38, unlist(UTR5))
+
+# make fasta files
+fasta_CDS_seq <- DNAStringSet(CDS_seq)
+fasta_UTR3_seq <- DNAStringSet(UTR3_seq)
+fasta_UTR5_seq <- DNAStringSet(UTR5_seq)
+
+# fix names to be unique for each sequence
+CDS_names <- CDS %>% 
+  unlist() %>% 
+  mutate(fasta_names = str_c(names(.), "_exon_rank_", exon_rank)) %>% 
+  as_tibble() %>% 
+  dplyr::select(fasta_names) 
+
+UTR3_names <- UTR3 %>% 
+  unlist() %>% 
+  mutate(fasta_names = str_c(names(.), "_exon_name_",exon_name)) %>% 
+  as_tibble() %>% 
+  dplyr::select(fasta_names) 
+
+UTR5_names <- UTR5 %>% 
+  unlist() %>% 
+  mutate(fasta_names = str_c(names(.), "_exon_name_",exon_name)) %>% 
+  as_tibble() %>% 
+  dplyr::select(fasta_names) 
+# rename the fasta
+names(fasta_CDS_seq) <-   CDS_names$fasta_names
+names(fasta_UTR3_seq) <-   UTR3_names$fasta_names
+names(fasta_UTR5_seq) <-   UTR5_names$fasta_names
+
+# export the fasta 
+targets_dirs <- c( "CDS", "UTR3", "UTR5") %>% 
+  file.path("human_data", "piRNA_Targets", .) 
+targets_dirs %>% 
+  map(~dir.create(., recursive = TRUE))      
+
+list("CDS" = fasta_CDS_seq,
+     "UTR3" = fasta_UTR3_seq,
+     "UTR5" = fasta_UTR5_seq) %>% 
+  map2(.y = targets_dirs, ~ Biostrings::writeXStringSet(x = .x, filepath = file.path(.y, str_c(basename(.y),"_hg38.fasta")))
+       )
+```
+### ii. make a fasta with only piRNA sequences
+
+```{r piRNA fasta}
+library(tidyverse)
+piRNAs_gtf <- plyranges::read_gff2(file.path("human_data", "sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf")) %>% 
+  filter(gene_type == "piRNA") %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = T) %>% 
+  dplyr::select(gene_id, seq_RNA) %>%
+  column_to_rownames("gene_id")
+
+piRNA_fa_hg38 <- Biostrings::DNAStringSet(piRNAs_gtf$seq_RNA)
+names(piRNA_fa_hg38) <- rownames(piRNAs_gtf)
+
+piRNA_fa_hg38 %>% 
+Biostrings::writeXStringSet(file.path("human_data", 
+                                      "piRNA_Targets", 
+                                      "piRNAs_for_target_prediction_v0.2.fa"))
+```
+### iii.make the indexes for bowtie
 
 ```{bash run the bowtie docker}
 mkdir UTR3 CDS UTR5
@@ -426,102 +507,36 @@ bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/human_data/piRNA_Targets/C
 my_data/human_data/piRNA_Targets/piRNAs_for_target_prediction_v0.2.fa | \
 samtools view -F 4 -@ 2 -  > my_data/human_data/piRNA_Targets/res_CDS_hg38.txt
 ```
-
-### i. find the genomic regions 3', 5' UTR and CDS
-
-```{r CDS and UTR}
-library("BSgenome.Hsapiens.UCSC.hg38")
-library(tidyverse)
-library(plyranges)
-library(GenomicFeatures)
-
-# import the gencode gtf as TxDb
-genecode <- makeTxDbFromGFF(file = "human_data/GRCh38/gencode.v34.primary_assembly.annotation.gtf.gz",
-                            dataSource="gencode",
-                            organism = "Homo sapiens")
-
-CDS <- cdsBy(genecode, "tx", use.names = TRUE) %>% 
-  keepStandardChromosomes(pruning.mode = "tidy")
-UTR3 <- threeUTRsByTranscript(genecode, use.names = TRUE) %>% keepStandardChromosomes(pruning.mode = "tidy")
-UTR5 <- fiveUTRsByTranscript(genecode, use.names = TRUE) %>% keepStandardChromosomes(pruning.mode = "tidy")
-
-# get sequences
-CDS_seq <- Views(BSgenome.Hsapiens.UCSC.hg38, unlist(CDS))
-UTR3_seq <- Views(BSgenome.Hsapiens.UCSC.hg38, unlist(UTR3))
-UTR5_seq <- Views(BSgenome.Hsapiens.UCSC.hg38, unlist(UTR5))
-
-# make fasta files
-fasta_CDS_seq <- DNAStringSet(CDS_seq)
-fasta_UTR3_seq <- DNAStringSet(UTR3_seq)
-fasta_UTR5_seq <- DNAStringSet(UTR5_seq)
-
-# fix names to be unique for each sequence
-CDS_names <- CDS %>% 
-  unlist() %>% 
-  mutate(cds_name = str_c(names(.), "_exon_rank_", exon_rank)) %>% 
-  as_tibble() %>% 
-  dplyr::select(cds_name) 
-
-UTR3_names <- UTR3 %>% 
-  unlist() %>% 
-  as_tibble(rowna) %>% 
-  dplyr::select(exon_name) %>% filter(duplicated(exon_name))
-  
-
-  as_tibble(rownames = "names_tx") %>% select() %>% mutate(cds_name = str_c(group_name, exon_rank,))
-# export the fasta 
-fasta_CDS_seq %>% 
-  Biostrings::writeXStringSet(file.path("human_data/sncRNA_piRNBnk_RNACent_GRCh38_v34.fa"))
-
-targets_dirs <- c( "CDS", "UTR3", "UTR5") %>% 
-  file.path("human_data", "piRNA_Targets", .) 
-targets_dirs %>% 
-  map(~dir.create(., recursive = TRUE))      
-
-list("CDS" = fasta_CDS_seq,
-     "UTR3" = fasta_UTR3_seq,
-     "UTR5" = fasta_UTR5_seq) %>% 
-  map2(.y = targets_dirs, ~ Biostrings::writeXStringSet(x = .x, filepath = file.path(.y, str_c(basename(.y),"_hg38.fasta")))
-       )
-```
-
-
-### i. make a fasta with only piRNA sequences
-
-```{r piRNA fasta}
-library(tidyverse)
-piRNAs_gtf <- plyranges::read_gff2(file.path("human_data", "sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf")) %>% 
-  filter(gene_type == "piRNA") %>% 
-  as_tibble() %>% 
-  distinct(gene_id, .keep_all = T) %>% 
-  dplyr::select(gene_id, seq_RNA) %>%
-  column_to_rownames("gene_id")
-
-piRNA_fa_hg38 <- Biostrings::DNAStringSet(piRNAs_gtf$seq_RNA)
-names(piRNA_fa_hg38) <- rownames(piRNAs_gtf)
-
-piRNA_fa_hg38 %>% 
-Biostrings::writeXStringSet(file.path("human_data", 
-                                      "piRNA_Targets", 
-                                      "piRNAs_for_target_prediction_v0.2.fa"))
-```
 ### ii. make a dataframe with all predicted gene targets
 
 ```{r export predicted targeted genes}
+gtf_again <- file.path("human_data", "GRCh38", "gencode.v34.primary_assembly.annotation.gtf.gz") %>% 
+  read_gff2() %>% 
+  as_tibble()
+
+gen_names <- gtf_again %>% 
+  select(gene_id, gene_type, gene_name, transcript_id, transcript_name) %>%
+  filter(!is.na(transcript_id)) %>% 
+  dplyr::count(transcript_id, gene_name, gene_type) %>% 
+  select(-n)
+
 # Load the targets
-targets <- list.files(path = "human_data/target_prediction_indexes_hg38_UTR3_5_CDS", pattern = ".UTR.+txt|CDS.+txt",full.names = T) %>% 
-  vroom(col_names = F, id = "file", col_select = c("file", "X1", "X3")) %>%
-  mutate(file = file %>% str_remove(".+/") %>% str_remove("res_")%>% str_remove("_hg.+")) %>% 
-  separate(X3,c("Gene_stable_ID",
-                "Gene_stable_ID_version",
-                "Transcript_stable_ID",
-                "Transcript_stable_ID_version",
-                "Target_gene_name",
-                "Target_gene_type"), 
-           sep = "\\|") %>% 
-  dplyr::rename(piRNA_id = X1) %>% 
+targets <- list.files(path = file.path("human_data", 
+                                      "piRNA_Targets"), 
+                      pattern = "(UTR|CDS).+txt",full.names = T) %>% 
+  vroom::vroom(col_names = FALSE, 
+               id = "file", 
+               col_select = c("file", "X1", "X3")) %>%
+  mutate(file = file %>% basename() %>% str_remove_all("res_|_hg38.txt|.txt")) %>% 
+  separate(X3, 
+           c("transcript_id", "exon_rank"), sep = "_exon_rank_|_exon_name_") %>% 
+  left_join(gen_names)  %>% 
+  dplyr::rename(piRNA_id = X1,
+                Target_gene_name = gene_name) %>% 
   arrange(Target_gene_name) %>% 
-  write_tsv("human_data/piRNA_predicted_Targets.txt")
+  write_tsv(file.path("human_data",
+                      "piRNA_Targets", 
+                      "piRNA_predicted_Targets.v02.txt"))
 ```
 ## 10.  Cross the small non-coding RNA IDs from RNAcentral with the names of other databases
 
