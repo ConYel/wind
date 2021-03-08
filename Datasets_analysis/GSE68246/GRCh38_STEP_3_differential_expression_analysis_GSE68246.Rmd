@@ -90,7 +90,7 @@ If we load the voom object we can extract the design matrix otherwise we can cre
 #1 voom object
 design <- salmon_vm_QW_TMM$design
 #or dgl object
-targets <- salmon_edgR_TMM$samples
+#targets <- salmon_edgR_TMM$samples
 ```
 ## 4. EdgeR
 Perform the analysis with edgeR TMM normalization for both salmon and featurecounts
@@ -249,13 +249,13 @@ vennDiagram(results,
 dev.off()
 
 # join both results ----
-identical(fc_DES %>% names(), salmon_DES %>% names)
+identical(fc_DES %>% names(), salmon_DES %>% names())
 
 map2(fc_DES, salmon_DES, ~.x %>% 
        select_at(vars(starts_with(c("smallRNA","logFC",
                                     "P.Value","adj.P.Val")))) %>% 
        rename_at(vars(!matches("smallRNA")), list(~str_c(.,"_FC"))) %>% 
-       full_join(.y%>% 
+       full_join(.y %>% 
        select_at(vars(starts_with(c("smallRNA","logFC",
                                     "P.Value","adj.P.Val")))) %>% 
        rename_at(vars(!matches("smallRNA")), list(~str_c(.,"_salmon"))))
@@ -316,18 +316,20 @@ public_and_all_comp <- all_comp %>%
 
 ```{r}
 suppressPackageStartupMessages(library(plyranges))
-# load gtf of smallRNAs
-smallRNAs_gtf  <- smallRNAs_gtf %>% 
-  filter(gene_type == "piRNA")
-
 #load targets
-targets_all <- read_tsv("piRNA_predicted_Targets.txt")  
+targets_all <- file.path("human_data",
+                      "piRNA_Targets", 
+                      "piRNA_predicted_Targets.v02.txt") %>% 
+  read_tsv() %>% 
+  dplyr::rename(smallRNA = piRNA_id)
 
 # targets DE union
 targets_DEs_keep <- all_comp %>% 
   filter(gene_type == "piRNA") %>% 
-  inner_join(targets_all) %>% 
-  write_tsv(str_glue("{str_remove(dat_path[1],'/salmon|/featureCounts')}/all_comp_voom_QW_DE_targets_predicted_{todate}.txt"))
+  select(smallRNA, starts_with(c("logFC_","adj.P"))) %>% 
+  left_join(targets_all) %>% 
+  write_tsv(
+    file.path(dirname(dat_path[1]), str_glue("all_comp_voom_QW_DE_targets_predicted_{todate}.txt")))
 ```
 # 8. Make a heatmap of differential expressed piRNAs
 ### i. Load the libraries
@@ -349,12 +351,9 @@ piRNAs_DE <- list.files(path = dirname(dat_path[1]),
          across(.cols = contains("adj.P.Val"), 
                 .fns = ~ .x < 0.05)) %>% 
   dplyr::select(smallRNA, contains("logFC")) %>%  
-  dplyr::filter((logFC_Spheroid_Mono_FC > 0 & logFC_Spheroid_Mono_salmon > 0) |      (logFC_Spheroid_Mono_FC < 0 & logFC_Spheroid_Mono_salmon < 0))
-
-  
+  dplyr::filter((logFC_Spheroid_Mono_FC > 0 & logFC_Spheroid_Mono_salmon > 0) | (logFC_Spheroid_Mono_FC < 0 & logFC_Spheroid_Mono_salmon < 0)) %>% 
   write_tsv(file.path(dirname(dat_path[1]), 
-                      str_c("all_logFC_voom_QW_DE_piRNA_",
-    todate,".txt")))
+                      str_c("all_logFC_voom_QW_DE_piRNA_", todate,".txt")))
   
 # load the piRNA expression matrix----
 ## featurecounts
