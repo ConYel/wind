@@ -248,7 +248,7 @@ dev.off()
 # join both results ----
 identical(fc_DES %>% names(), salmon_DES %>% names)
 
-map2(fc_DES, salmon_DES, ~.x %>% 
+all_comp <- map2(fc_DES, salmon_DES, ~.x %>% 
        select_at(vars(starts_with(c("smallRNA","logFC",
                                     "P.Value","adj.P.Val")))) %>% 
        rename_at(vars(!matches("smallRNA")), list(~str_c(.,"_FC"))) %>% 
@@ -266,18 +266,21 @@ map2(fc_DES, salmon_DES, ~.x %>%
 
 ```{r}
 suppressPackageStartupMessages(library(plyranges))
-# load gtf of smallRNAs
-smallRNAs_gtf <- read_gff2("../genome_transc_human/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
-  as_tibble() %>% 
-  select(gene_id, gene_type) %>% 
-  distinct(gene_id, .keep_all = TRUE) %>% 
-  filter(gene_type == "piRNA")
 #load targets
-targets_all <- read_tsv("../genome_transc_human/human_data/piRNA_predicted_Targets.txt")  
+targets_all <- file.path("human_data",
+                      "piRNA_Targets", 
+                      "piRNA_predicted_Targets.v02.txt") %>% 
+  read_tsv() %>% 
+  dplyr::rename(smallRNA = piRNA_id)
 
 # targets DE union
-targets_DEs_keep <- all_comp %>% unite(piRNA_id, c(RNAcentral_id, GR),sep = "_GR_") %>% filter(gene_type == "piRNA") %>% inner_join(targets_all) %>% 
-  write_tsv("Breast_Cancer_TCGA/DEA_BRCA_06_Oct_2020/DE_targets_predicted.txt")
+targets_DEs_keep <- all_comp %>% 
+  filter(gene_type == "piRNA") %>% 
+  select(smallRNA, starts_with(c("logFC_","adj.P"))) %>% 
+  left_join(targets_all) %>% 
+  write_tsv(
+    file.path(dirname(dat_path[1]), 
+              str_glue("all_comp_voom_QW_DE_targets_predicted_{todate}.txt")))
 ```
 # 7. Make a heatmap of differential expressed piRNAs
 ### i. Load the libraries
