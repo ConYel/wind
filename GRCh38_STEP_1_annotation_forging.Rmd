@@ -74,9 +74,10 @@ in piRNA sequences the gtf file, and we get the small RNA genome
 coordinates(bed files) from RNAcentral.
 
 ```{bash download the Databases}
-# all the files and folders for the workflow are created in the working directory 
+# start 1st the docker container
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 
+# all the files and folders for the workflow are created in the working directory 
 #create the folder that will have the genome and smallRNA sequences information
 mkdir -p my_data/human_data/GRCh38 my_data/human_data/piRNABank my_data/human_data/RNACentral
 
@@ -103,7 +104,7 @@ wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_34/gencode.
 The fasta file from piRNAbank has U character instead of T in the sequences, 
 so we can make an adjustment using [sed](https://www.gnu.org/software/sed/)
 ```{bash sed fasta}
-sed 's/U/T/g' my_data/human_data/human_pir.txt > my_data/human_data/pirnaBank_human.fasta
+sed 's/U/T/g' my_data/human_data/piRNABank/human_pir.txt > my_data/human_data/piRNABank/pirnaBank_human.fasta
 # exit docker container
 exit
 ```
@@ -160,7 +161,7 @@ utilizing STAR aligner and export them in fasta format
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 
 # create index
-STAR --runMode genomeGenerate --genomeDir my_data/human_data/GRCh38_v34 --genomeFastaFiles my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa --runThreadN 4 && cp Log.out my_data/human_data/GRCh38_v34/Log.out
+STAR --runMode genomeGenerate --genomeDir my_data/human_data/GRCh38_v34 --genomeFastaFiles my_data/human_data/GRCh38/GRCh38.primary_assembly.genome.fa --runThreadN 8 && cp Log.out my_data/human_data/GRCh38_v34/Log.out
  
 # align the piRNABank sequences
 STAR --genomeDir my_data/human_data/GRCh38_v34/ --genomeLoad LoadAndKeep \
@@ -296,7 +297,7 @@ transcripts_GR <- transcripts_GR %>%  # [153.043] GRs / [41,496] sRNA_id -> [43,
 ### v. piRNABank. import the piRNA sequences aligned to genome 
 
 ```{r import piRNABank}
-piRNAbank_hg38 <- here("human_data","piRNABank", "piBnk_GRCh38_v34_fin.fasta") %>% 
+piRNAbank_hg38 <- here("human_data", "piRNABank", "piBnk_GRCh38_v34_fin.fasta") %>% 
   Biostrings::readDNAStringSet()
 
 piRNAbank_hg38_tib <- piRNAbank_hg38 %>% # 23,120 sequences
@@ -345,7 +346,7 @@ piRNAbank_hg38_ranges %>%
   as_tibble() %>%
   unite(col = "seq_s", seqnames:strand, sep = "_") %>% 
   count(seq_s, sort = TRUE) %>% 
-  filter(n > 1) %>% # 38 sequences have the same genomic range with at least one other 
+  filter(n > 1) %>% # 38 sequences have the same genomic range with at least another 
   .$seq_s %>% 
   map(~sequen_pi_false %>% 
   filter(seq_s == .x)) %>% 
