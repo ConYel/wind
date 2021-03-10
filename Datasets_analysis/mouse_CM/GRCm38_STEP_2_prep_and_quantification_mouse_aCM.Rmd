@@ -1,0 +1,280 @@
+---
+title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
+subtitle: "Computational workflow for the preprocessing of adult mouse cardiomyocytes from the E-MTAB-9866 public dataset"
+author: "Constantinos Yeles (Konstantinos Geles)"
+date: "`r format(Sys.time(), '%a_%b_%d_%Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    theme: paper 
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+# The Data set
+
+We will work on the datasets uploaded on ArrayExpress with id: [E-MTAB-9866](https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-9866),
+
+## 1. Data aqcuisition and preprocessing  
+### i. Downloading the samples
+
+We will use the [fastq-dl](https://github.com/rpetit3/fastq-dl) tool to download
+the samples from the European Nucleotide Archive
+
+```{bash download samples}
+docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
+
+# run the script to download the fastqs
+fastq-dl --cpus 4 --prefix "PRJEB41807" \
+--outdir my_data/Datasets_analysis/mouse_CM/downloaded_samples PRJEB41807 ENA 
+```
+
+### ii. Preprocessing of the samples
+We perform quality control(QC) on the fastq files to get basic information about the samples.
+We work with the __[Fastqc](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)__ tool to perform QC.
+
+```{bash preprocessing}
+ANALYSIS_FOLDER="my_data/Datasets_analysis/mouse_CM"
+
+mkdir "${ANALYSIS_FOLDER}"/qc_before_trim "${ANALYSIS_FOLDER}"/qc_after_trim \
+"${ANALYSIS_FOLDER}"/quants  "${ANALYSIS_FOLDER}"/star
+
+'fastqc' --threads 2 --outdir="${ANALYSIS_FOLDER}"/qc_before_trim \
+"${ANALYSIS_FOLDER}"/downloaded_samples/*fastq.gz 
+
+for file in "${ANALYSIS_FOLDER}"/downloaded_samples/*.fastq.gz;  
+do 
+./spar_prepare/smrna_adapter_cut.sh $file 6; 
+done
+
+'fastqc' --threads 2 --outdir="${ANALYSIS_FOLDER}"/qc_after_trim \
+"${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz
+```
+## 2. Alignment and Quantification
+### i. Alignment with STAR
+We use the __[STAR](https://github.com/alexdobin/STAR)__ aligner and then
+perform quantification with featureCounts of __[Rsubread](https://www.bioconductor.org/packages/release/bioc/html/Rsubread.html)__ package.
+
+```{bash STAR}
+for file in  "${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz; 
+do 
+samp=`basename ${file}`; 
+regex="${samp%%.trimmed.fastq.gz}"; 
+echo "Processing sample ${samp} start: $(date)"; 
+STAR --genomeDir my_data/mouse_data/indexes/GRCm38_v34 \
+--genomeLoad LoadAndKeep --readFilesIn ${file} --readFilesCommand zcat \
+--runThreadN 6 --alignIntronMax 1 --outSAMattributes NH HI NM MD \
+--outFilterMultimapNmax 100 --outSAMtype BAM SortedByCoordinate \
+--limitBAMsortRAM 40000000000 --outReadsUnmapped Fastx \
+--outFilterMismatchNmax 1 --outFilterMatchNmin 14 \
+--outFileNamePrefix "${ANALYSIS_FOLDER}/star/${regex}_align/${regex}_";  
+echo "end:$(date)";
+done
+
+exit
+```
+### ii. Transcript abundances with __[Salmon](https://github.com/COMBINE-lab/salmon)__
+
+We will use a public docker image to run salmon
+
+```{bash salmon}
+# run the docker
+docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
+
+ANALYSIS_FOLDER="my_data/Datasets_analysis/mouse_CM"
+
+# run the samples
+
+for fn in "${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz;   
+do  samp=`basename ${fn}`;   
+regex="${samp%%.trimmed.fastq.gz}";   
+echo "Processing sample ${samp} start: $(date)";   
+salmon quant -i my_data/mouse_data/indexes/GRCm38_v34_salmon  \
+-l A -r ${fn} --seqBias --gcBias --numBootstraps 100  -p 6 \
+--validateMappings --writeMappings="${ANALYSIS_FOLDER}/quants/${regex}.sam" \
+-o "${ANALYSIS_FOLDER}/quants/${regex}_quant"; 
+echo "end:$(date)";
+done
+exit
+
+docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
+#save as bam files
+for file in "${ANALYSIS_FOLDER}"/quants/*.sam;
+do 
+regex="${file%%.sam}";
+echo "Processing sample ${regex} start: $(date)"; 
+echo samtools view -O bam -o ${regex}.bam -@ 8 ${file};
+echo "end:$(date)";
+done
+# remove all .sam files
+rm ${ANALYSIS_FOLDER}/quants/*.sam
+exit
+```
+
+Next, we run a docker image which includes various R packages that
+will be used in the downstream analysis following featurecounts
+for the exploratory data analysis of piRNA data
+
+### R docker
+```{bash docker for R}
+docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 -e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
+```
+
+From here on we work on Rstudio using a browser. 
+we input http://localhost:8787/ on browser, 0 for username and 12345 for password.
+
+### iv. __[featureCounts](http://subread.sourceforge.net/)__
+```{r featureCounts}
+library(Rsubread)
+library(tidyverse)
+list.BAM <- list.files(path = file.path("Datasets_analysis", 
+                                        "Testis_COLO205", "star"), 
+                       pattern = ".bam$", 
+                       recursive = TRUE, 
+                       full.names = TRUE)
+
+path_gtf <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.gtf")
+todate <- format(Sys.time(), "%d_%b_%Y")
+
+fc <- featureCounts(files = list.BAM,
+                    annot.ext =  path_gtf,
+                    isGTFAnnotationFile = TRUE,
+                    GTF.featureType = "exon",
+                    GTF.attrType.extra = c("gene_type", "sRNA_id", "seq_RNA"),
+                    nthreads = 13,
+                    useMetaFeatures = TRUE,
+                    allowMultiOverlap = TRUE,
+                    minOverlap = 10,
+                    largestOverlap = TRUE,
+                    fraction = TRUE,
+                    strandSpecific = 0,
+                    verbose = TRUE,
+                    reportReads = "BAM",
+                    reportReadsPath = file.path("Datasets_analysis", 
+                                        "Testis_COLO205", "star")) 
+
+fc %>% 
+  write_rds(file = str_glue(file.path("Datasets_analysis", "Testis_COLO205",
+                                      "feature_counts_"), "{todate}.rds"))
+```
+
+Next we will follow the instructions in STEP_3_Exploratory_Data_Analysis.Rmd 
+
+
+## R Session Info
+```{r session Info}
+sessionInfo()
+```
+R Under development (unstable) (2021-01-07 r79806)
+Platform: x86_64-pc-linux-gnu (64-bit)
+Running under: Ubuntu 20.04.1 LTS
+
+Matrix products: default
+BLAS/LAPACK: /usr/lib/x86_64-linux-gnu/openblas-pthread/libopenblasp-r0.3.8.so
+
+locale:
+ [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C               LC_TIME=en_US.UTF-8       
+ [4] LC_COLLATE=en_US.UTF-8     LC_MONETARY=en_US.UTF-8    LC_MESSAGES=C             
+ [7] LC_PAPER=en_US.UTF-8       LC_NAME=C                  LC_ADDRESS=C              
+[10] LC_TELEPHONE=C             LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] forcats_0.5.0       stringr_1.4.0       dplyr_1.0.2         purrr_0.3.4         readr_1.4.0        
+ [6] tidyr_1.1.2         tibble_3.0.4        ggplot2_3.3.3       tidyverse_1.3.0     Rsubread_2.5.3     
+[11] BiocManager_1.30.10
+
+loaded via a namespace (and not attached):
+ [1] MatrixGenerics_1.3.0        Biobase_2.51.0              httr_1.4.2                 
+ [4] bit64_4.0.5                 vroom_1.3.2                 jsonlite_1.7.2             
+ [7] modelr_0.1.8                assertthat_0.2.1            stats4_4.1.0               
+[10] GenomeInfoDbData_1.2.4      cellranger_1.1.0            Rsamtools_2.7.0            
+[13] yaml_2.2.1                  pillar_1.4.7                backports_1.2.1            
+[16] lattice_0.20-41             glue_1.4.2                  GenomicRanges_1.43.1       
+[19] XVector_0.31.1              rvest_0.3.6                 colorspace_2.0-0           
+[22] Matrix_1.3-2                XML_3.99-0.5                pkgconfig_2.0.3            
+[25] broom_0.7.3                 haven_2.3.1                 zlibbioc_1.37.0            
+[28] scales_1.1.1                BiocParallel_1.25.2         generics_0.1.0             
+[31] IRanges_2.25.6              ellipsis_0.3.1              withr_2.3.0                
+[34] SummarizedExperiment_1.21.1 BiocGenerics_0.37.0         cli_2.2.0                  
+[37] magrittr_2.0.1              crayon_1.3.4                readxl_1.3.1               
+[40] fansi_0.4.1                 fs_1.5.0                    xml2_1.3.2                 
+[43] tools_4.1.0                 hms_0.5.3                   BiocIO_1.1.2               
+[46] lifecycle_0.2.0             matrixStats_0.57.0          plyranges_1.11.0           
+[49] S4Vectors_0.29.6            munsell_0.5.0               reprex_0.3.0               
+[52] DelayedArray_0.17.7         Biostrings_2.59.2           compiler_4.1.0             
+[55] GenomeInfoDb_1.27.3         tinytex_0.28                rlang_0.4.10               
+[58] grid_4.1.0                  RCurl_1.98-1.2              rstudioapi_0.13            
+[61] rjson_0.2.20                bitops_1.0-6                restfulr_0.0.13            
+[64] gtable_0.3.0                DBI_1.1.0                   R6_2.5.0                   
+[67] GenomicAlignments_1.27.2    lubridate_1.7.9.2           knitr_1.30                 
+[70] rtracklayer_1.51.3          bit_4.0.4                   stringi_1.5.3              
+[73] parallel_4.1.0              Rcpp_1.0.5                  vctrs_0.3.6                
+[76] dbplyr_2.0.0                tidyselect_1.1.0            xfun_0.20
+
+
+## We have worked on : 
+```{bash versions}
+[root@localhost]# cat /etc/*-release
+
+CentOS Linux release 7.9.2009 (Core)
+NAME="CentOS Linux"
+VERSION="7 (Core)"
+ID="centos"
+ID_LIKE="rhel fedora"
+VERSION_ID="7"
+PRETTY_NAME="CentOS Linux 7 (Core)"
+ANSI_COLOR="0;31"
+CPE_NAME="cpe:/o:centos:centos:7"
+HOME_URL="https://www.centos.org/"
+BUG_REPORT_URL="https://bugs.centos.org/"
+
+CENTOS_MANTISBT_PROJECT="CentOS-7"
+CENTOS_MANTISBT_PROJECT_VERSION="7"
+REDHAT_SUPPORT_PRODUCT="centos"
+REDHAT_SUPPORT_PRODUCT_VERSION="7"
+
+CentOS Linux release 7.9.2009 (Core)
+CentOS Linux release 7.9.2009 (Core)
+
+
+[root@localhost]# docker version
+
+Client: Docker Engine - Community
+ Version:           20.10.2
+ API version:       1.41
+ Go version:        go1.13.15
+ Git commit:        2291f61
+ Built:             Mon Dec 28 16:17:48 2020
+ OS/Arch:           linux/amd64
+ Context:           default
+ Experimental:      true
+
+Server: Docker Engine - Community
+ Engine:
+  Version:          20.10.2
+  API version:      1.41 (minimum version 1.12)
+  Go version:       go1.13.15
+  Git commit:       8891c58
+  Built:            Mon Dec 28 16:16:13 2020
+  OS/Arch:          linux/amd64
+  Experimental:     false
+ containerd:
+  Version:          1.4.3
+  GitCommit:        269548fa27e0089a8b8278fc4fc781d7f65a939b
+ runc:
+  Version:          1.0.0-rc92
+  GitCommit:        ff819c7e9184c13b7c2607fe6c30ae19403a7aff
+ docker-init:
+  Version:          0.19.0
+  GitCommit:        de40ad0
+```

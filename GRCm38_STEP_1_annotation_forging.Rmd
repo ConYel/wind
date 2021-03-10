@@ -679,7 +679,6 @@ data_sets %>%
   map(~dir.create(., recursive = T))
 ```
 ## 6. Optional Make the indexes for STAR and salmon
-
 ### iv. Indexes for STAR and Salmon with Spike-ins
 
 ```{bash  mouse salmon index}
@@ -712,11 +711,12 @@ exit
 ```
 
 
-##############################################
+############################  The following code need to be revised more
+
 Following this workflow the files for annotation and quantification of small-RNA samples have been prepared. 
 Afterwards, the steps in the  pre-processing of the samples, alignment, quantification and calculation of transcript abundances could be followed.
 
-## 4. Provide extra information regarding genomic locations, genes, transcripts, for the gtf
+## 7. Provide extra information regarding genomic locations, genes, transcripts, for the gtf
 ### i. Load libraries
 
 ```{r bumphunter libraries}
@@ -792,7 +792,7 @@ res_chr <- bind_rows(res_chr) %>%
     gene_type, sRNA_id, source, seq_RNA) %>% 
   write_tsv("mouse_data/gene_regions_piRNAbank_rCentral.txt")
 ``` 
-## 5. Find multimapping piRNAs
+## 8. Find multimapping piRNAs
 
 ```{r multimapping piRNAs}
 multi_test <- piRNAbank_rCentral_gtf %>%
@@ -813,7 +813,7 @@ piRNAbank_rCentral_gtf %>%
   unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
   count(gene_id, sort = T) %>% write_tsv("genomic_locations_stats_multi_piRNA.txt")
 ```
-## 6. Find how many piRNAs are in common and uncommon in piRNABank and RNAcentral in the new gtf 
+## 9. Find how many piRNAs are in common and uncommon in piRNABank and RNAcentral in the new gtf 
 
 ```{r}
 c_piBNK_RCent %>% distinct(seq_id, .keep_all = T)
@@ -824,7 +824,7 @@ c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(!is.na(sRNA_type),i
 
 c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(!is.na(name),!is.na(sRNA_id), gene_type== "piRNA")
 ```
-## 7. Find which smallRNAs are inside Trasposable Elements
+## 10. Find which smallRNAs are inside Trasposable Elements
 
 We have downloaded a gtf file with the information about genomic regions of 
 Transposable Elements for human genome: http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/
@@ -851,29 +851,3 @@ piRNAbank_rCentral_gtf %>%
   plyranges::reduce_ranges_directed() %>% length()
 
 ```
-## 8. indexes for STAR and Salmon 
-
-```{bash spike-ins indexes}
-docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
-
-STAR --runMode genomeGenerate --genomeDir my_data/mouse_data/GRCm38 --genomeFastaFiles my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa --runThreadN 7
-
-# following the instructions for salmon decoy aware indexing
-# https://combine-lab.github.io/alevin-tutorial/2019/selective-alignment/
-grep "^>" <my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa | cut -d " " -f 1 > my_data/mouse_data/decoys.txt
-
-sed -i.bak -e 's/>//g' my_data/decoys.txt
-
-cat my_data/ncRNA_transcripts_100bp_RNA_Central_piRNAbank_mm10.fa my_data/ncRNA_genome_100bp_RNA_Central_piRNAbank_mm10.fa > gentrome_piRNAbank_Central.fa
-
-exit
-
-# run the docker
-docker run --rm -it -v $(pwd):/home/my_data combinelab/salmon
-
-# create the index
-## *remove manually the spike-ins chrs from decoys
-salmon index -t my_data/mouse_data/gentrome_GRCm38_piRNAbank_Central.fa -d my_data/mouse_data/decoys.txt -i my_data/mouse_data/ncRNA_Central_piRNAB_mm10_index -k 15 -p 15
-exit
-```
-

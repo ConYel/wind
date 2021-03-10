@@ -478,7 +478,7 @@ Biostrings::writeXStringSet(file.path("human_data",
                                       "piRNA_Targets", 
                                       "piRNAs_for_target_prediction_v0.2.fa"))
 ```
-### iii.make the indexes for bowtie
+### iii. make the indexes for bowtie
 
 ```{bash run the bowtie docker}
 mkdir UTR3 CDS UTR5
@@ -507,7 +507,7 @@ bowtie --nofw -v 3 -a --best --strata -p 6 -x my_data/human_data/piRNA_Targets/C
 my_data/human_data/piRNA_Targets/piRNAs_for_target_prediction_v0.2.fa | \
 samtools view -F 4 -@ 2 -  > my_data/human_data/piRNA_Targets/res_CDS_hg38.txt
 ```
-### ii. make a dataframe with all predicted gene targets
+### iv. make a dataframe with all predicted gene targets
 
 ```{r export predicted targeted genes}
 gtf_again <- file.path("human_data", "GRCh38", "gencode.v34.primary_assembly.annotation.gtf.gz") %>% 
