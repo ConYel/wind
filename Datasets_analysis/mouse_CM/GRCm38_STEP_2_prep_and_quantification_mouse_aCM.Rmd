@@ -135,12 +135,12 @@ we input http://localhost:8787/ on browser, 0 for username and 12345 for passwor
 library(Rsubread)
 library(tidyverse)
 list.BAM <- list.files(path = file.path("Datasets_analysis", 
-                                        "Testis_COLO205", "star"), 
+                                        "mouse_CM", "star"), 
                        pattern = ".bam$", 
                        recursive = TRUE, 
                        full.names = TRUE)
 
-path_gtf <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.gtf")
+path_gtf <- file.path("mouse_data","sncRNA_piRNBnk_RNACent_GRCm38_v34.gtf")
 todate <- format(Sys.time(), "%d_%b_%Y")
 
 fc <- featureCounts(files = list.BAM,
@@ -148,7 +148,7 @@ fc <- featureCounts(files = list.BAM,
                     isGTFAnnotationFile = TRUE,
                     GTF.featureType = "exon",
                     GTF.attrType.extra = c("gene_type", "sRNA_id", "seq_RNA"),
-                    nthreads = 13,
+                    nthreads = 6,
                     useMetaFeatures = TRUE,
                     allowMultiOverlap = TRUE,
                     minOverlap = 10,
@@ -158,10 +158,10 @@ fc <- featureCounts(files = list.BAM,
                     verbose = TRUE,
                     reportReads = "BAM",
                     reportReadsPath = file.path("Datasets_analysis", 
-                                        "Testis_COLO205", "star")) 
+                                        "mouse_CM", "star")) 
 
 fc %>% 
-  write_rds(file = str_glue(file.path("Datasets_analysis", "Testis_COLO205",
+  write_rds(file = str_glue(file.path("Datasets_analysis", "mouse_CM",
                                       "feature_counts_"), "{todate}.rds"))
 ```
 
