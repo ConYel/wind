@@ -78,7 +78,6 @@ mkdir -p my_data/mouse_data/GRCm38 my_data/mouse_data/piRNABank my_data/mouse_da
 # download the piRNAbank sequences
 wget http://pirnabank.ibab.ac.in/downloads/all/mouse_all.zip -O my_data/mouse_data/piRNABank/piRNA_mouse_all.zip
 
-unzip -d my_data/mouse_data/  my_data/mouse_data/mouse_all.zip && rm my_data/mouse_data/mouse_all.zip
 unzip -d my_data/mouse_data/piRNABank  my_data/mouse_data/piRNABank/piRNA_mouse_all.zip && rm my_data/mouse_data/piRNABank/piRNA_mouse_all.zip
 
 # download the RNAcentral genomic coordinates
