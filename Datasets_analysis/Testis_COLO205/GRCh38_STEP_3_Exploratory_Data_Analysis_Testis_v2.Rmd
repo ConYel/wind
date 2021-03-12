@@ -626,7 +626,7 @@ zoom_spikes_ins_testis_plot
 dev.off()
 
 ```
-### iii. BoxPlot of piRNAs in COLO205 and Testis before and after treatment
+### iv. BoxPlot of piRNAs in COLO205 and Testis before and after treatment
 
 ```{r boxplot of piRNAs}
 # function for summarizing stats
@@ -678,3 +678,30 @@ pdf(file.path(dirname(dat_path[1]), "piRNAs_bxplot_Testis_COLO205_treat_FC_salmo
 piRNAs_plot
 dev.off()
 ```
+### v. Spike-ins for dilutions and treated, non-treated
+
+```{bash fastq reads spike_ins}
+ANALYSIS_FOLDER="my_data/Datasets_analysis/mouse_CM"
+## find length of reads from STAR - featureCounts
+for file in $ANALYSIS_FOLDER/star/*featureCounts.bam; 
+do
+where_to_save=`dirname ${file}`; 
+regex=`basename ${file}`; 
+samp="${regex%%.sortedByCoord.out.bam.featureCounts.bam}";
+echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/${samp}_hist.txt";  
+samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$18}'| sed 's/XT:Z://g'  | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist.txt;
+echo "end:$(date)"; 
+done
+
+## find length of reads from salmon
+for file in $ANALYSIS_FOLDER/quants/*.bam;  
+do 
+where_to_save=`dirname ${file}`;  
+regex=`basename ${file}`;  
+samp="${regex%%.trimmed*}";  
+echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/${samp}_hist_allRNA.txt"; 
+samtools view  -@ 4 ${file} | awk 'BEGIN{FS=OFS="\t"}{print $1,length($10),$3}'| sort -k1,1 | bedtools groupby -g 1 -c 2,3 -o first,distinct -delim "," | cut -f2,3 | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_allRNA.txt; 
+echo "end:$(date)"; 
+done
+```
+
