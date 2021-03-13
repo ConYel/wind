@@ -681,7 +681,7 @@ dev.off()
 ### v. Spike-ins for dilutions and treated, non-treated
 
 ```{bash fastq reads spike_ins}
-ANALYSIS_FOLDER="my_data/Datasets_analysis/mouse_CM"
+ANALYSIS_FOLDER="my_data/Datasets_analysis/Testis_COLO205"
 ## find length of reads from STAR - featureCounts
 for file in $ANALYSIS_FOLDER/star/*featureCounts.bam; 
 do
