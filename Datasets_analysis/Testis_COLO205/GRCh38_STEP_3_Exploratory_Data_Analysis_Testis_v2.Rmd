@@ -678,10 +678,13 @@ pdf(file.path(dirname(dat_path[1]), "piRNAs_bxplot_Testis_COLO205_treat_FC_salmo
 piRNAs_plot
 dev.off()
 ```
-### v. Spike-ins for dilutions and treated, non-treated
+## 16.  Dilutions of spike-ins in various samples and between treated non treated
+### i. Spike-ins for dilutions and treated, non-treated
+make the tables with information per read, and sncRNA aligned
 
 ```{bash fastq reads spike_ins}
 ANALYSIS_FOLDER="my_data/Datasets_analysis/Testis_COLO205"
+
 ## find length of reads from STAR - featureCounts
 for file in $ANALYSIS_FOLDER/star/*featureCounts.bam; 
 do
@@ -703,5 +706,81 @@ echo "Processing sample ${samp} start: $(date) and saving in: ${where_to_save}/$
 samtools view  -@ 4 ${file} | awk 'BEGIN{FS=OFS="\t"}{print $1,length($10),$3}'| sort -k1,1 | bedtools groupby -g 1 -c 2,3 -o first,distinct -delim "," | cut -f2,3 | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_allRNA.txt; 
 echo "end:$(date)"; 
 done
+```
+### ii. trimmed fastq reads of the samples
+
+```{bash}
+
+for file in  "${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz; 
+do 
+samp=`basename ${file}`; 
+echo "Processing sample ${samp} start: $(date)"; 
+echo ${samp} | tee -a  "${ANALYSIS_FOLDER}/trimmed_reads.txt" ;
+zcat ${file} | awk '{s++}END{print s/4}' -  | tee -a  "${ANALYSIS_FOLDER}/trimmed_reads.txt" ;
+echo "end:$(date)";
+done
+```
+
+
+### iii. Spike-ins for dilutions and treated\non-treated
+
+```{r tables with reads info}
+targets_file$group
+# we will keep the only the samples that have spike-ins
+targets_file_spike <- targets_file %>% 
+  filter(!run_accession %in% c("ERR4846431", "ERR4846432", "ERR4846433")) %>% 
+  select(run_accession, sample_name)
+# featurecounts ----
+FC_files <- list.files(path = file.path(my_basename, "star"),
+                         pattern = "_Aligned_hist.txt", recursive = TRUE, 
+                         full.names = TRUE) %>% 
+  set_names(nm = basename(.) %>% str_remove("_.+"))
+
+## keep only the related files
+FC_files <- FC_files[names(FC_files) %in% as.character(targets_file_spike$run_accession)]
+
+
+hist_files_fc <-  FC_files %>% 
+  vroom::vroom(id = "file", # import them with vroom
+               col_names = c("read_count", "read_length", "smallRNA")) %>% 
+    # add information regarding Not_assigned reads and clean filenames
+  mutate(file = basename(file) %>% str_remove_all(".bam|_Ali.+"),
+         smallRNA = if_else(condition = is.na(smallRNA),
+                            true = "Not_assigned",
+                            false = smallRNA),
+         method = "fc") %>% 
+  filter(str_detect(smallRNA, "SS"))
+
+# salmon ----
+salmon_files <- list.files(path = file.path(my_basename, "quants"),
+                         pattern = "_hist.+", recursive = TRUE, 
+                         full.names = TRUE) %>% 
+  set_names(nm = basename(.) %>% str_remove(".bam.+"))
+
+## keep only the related files
+salmon_files <- salmon_files[names(salmon_files) %in% as.character(targets_file_spike$run_accession)]
+
+
+hist_files_salmon <- salmon_files %>% 
+    vroom::vroom(id = "file", # import them with vroom
+               col_names = c("read_count", "read_length", "smallRNA")) %>% 
+    # add information regarding multimapping reads and clean filenames
+  mutate(file = basename(file) %>% str_remove_all(".bam|_hist.+"),
+         method = "salmon")%>% 
+  filter(str_detect(smallRNA, "SS"))
+  
+# make one object with both methods --------
+hist_all_RNA <- bind_rows(hist_files_salmon, hist_files_fc) %>% 
+  mutate(Alignment = case_when(
+           smallRNA == "Not_assigned" ~ "Not_assigned",
+           str_detect(smallRNA, ",") ~ "Multimapped" ,
+           TRUE ~ "Unique" )) %>% 
+  left_join(targets_file_spike ,by = c("file" = "run_accession"))
+
+# summarize the reads per sample, per method, per spike-in-------
+hist_all_RNA %>%   
+  group_by(file, sample_name, method, smallRNA) %>% 
+  summarise(reads_sum = sum(read_count)) %>% 
+  write_tsv(file.path(dirname(dat_path[1]),"spike_in_reads_summary.txt"))
 ```
 
