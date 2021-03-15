@@ -402,13 +402,6 @@ done
 ### iv. ggplot for histograms
 
 ```{r make histograms}
-library(tidyverse)
-piRNAs_hist <- read_tsv("piRNAs_hist.txt")
-# gtf_piB_RCentr <- read_gff2("ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
-  as_tibble() %>% 
-  select(gene_id, gene_type) %>% 
-  distinct(gene_id, .keep_all = T)
-  
 # featurecounts ----
 hist_files_fc <- list.files(path = file.path(my_basename, "star"),
                          pattern = "_Aligned_hist.txt", recursive = TRUE, 
