@@ -1,0 +1,106 @@
+---
+title: "ping_pong"
+author: 'Domenico Palumbo #BioH4z'
+date: "16/3/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+# Load the libraries
+
+```{r required libraries}
+library(tidyverse)
+library(plyranges)
+library(GenomicAlignments)
+library(ggbio)
+library(ssviz)
+```
+
+# Load the GTF and select for piRNAs
+```{r GTF}
+annot_tbl <- file.path("human_data","sncRNA_spike_ins_piRNBnk_RNACent_GRCh38_v34.gtf")
+GTF <- read_gff2(annot_tbl, genome_info = "hg38")
+all_pirna <- GTF %>% filter(gene_type=="piRNA")
+```
+
+
+# Find a bam file
+```{r bam_selection}
+list.BAM <- list.files(path = file.path("Datasets_analysis", 
+                                        "Testis_COLO205", "star"), 
+                       pattern = ".bam$", 
+                       recursive = TRUE, 
+                       full.names = TRUE)
+```
+
+# Select from the bam a piRNA region to plot the coverage
+
+From a selected *.bam file, the user can choose a region to analyze. In detail, we pick the first file in "list.BAM" and we analyzed the first region in "all_pirna"
+```{r coverage_plot}
+ga <- readGAlignments(list.BAM[1], use.names=TRUE, param=ScanBamParam(which=all_pirna[1]))
+autoplot(ga, aes(color = strand, fill=strand), facets = strand ~ seqnames, stat="coverage")
+```
+
+# Ping-pong plot
+
+TO CREATE THE PINP-PONG PLOT IS MANDATORY TO SELECT A REGION OF INTEREST FROM THE ORIGINAL BAM FILE. WE SUGGEST TO FILTER FOR PIRNA AND THEN SELECT A REGION OR A CHROMOSOME USING SAMTOOLS. THIS WILL CREATE A SMALLER BAM FILES TO USE IN THE PLOT
+
+
+
+# To make a BED file with a selected piRNA
+
+In this scenario, we selected a random piRNA (hsa_piR_005239_DQ577218) and created a bed with its genomic regions.
+```{r select_a_pirna}
+
+choosed_pirna="hsa_piR_005239_DQ577218"
+
+gr=all_pirna %>% filter(gene_id==choosed_pirna)
+df <- data.frame(seqnames=seqnames(gr),
+                 starts=start(gr),
+                 ends=end(gr),
+                 names=c(rep(".", length(gr))),
+                 scores=c(rep(".", length(gr))),
+                 strands=strand(gr))
+write.table(df, file="foo.bed", quote=F, sep="\t", row.names=F, col.names=F)
+
+```
+
+After this, the user will create a small BAM file using the BED outside the R environment.
+
+```{bash selecting_regions_from_bam}
+samtools view -b -L foo.bed ERR3415702_testis.bam > pirna_test.bam
+```
+
+or it is possible to select directly an entire chromosome
+
+```{bash}
+samtools view -b -h pirna_colo.bam chr21 > pirna_test.bam
+```
+
+
+# Load the new BAM and create the plot
+```{r plot}
+ctrlbam <- readBam("pirna_test.bam")
+
+x=data.frame(table(ctrlbam$seq))
+ctrlbam2=ctrlbam[!duplicated(ctrlbam$seq),]
+ctrlbam2=ctrlbam2[order(ctrlbam2$seq),]
+ctrlbam2$qname=paste(ctrlbam2$qname,x$Freq,sep = "-")
+
+count<-getCountMatrix(ctrlbam2)
+pp.ctrl<-pingpong(count)
+plotPP(list(pp.ctrl))
+
+p=ggplot(data=pp.ctrl,aes(x=as.numeric(as.character(position)),y=Freq))+geom_line(col="red",size=1.5)+
+  xlab("Distance from 5' ends (nt)")+
+  theme_bw(base_size=18)+
+  scale_y_continuous(name="Frequency")
+
+p + scale_x_continuous(breaks=seq(-50,50,10), labels=as.character(seq(-50,50,10)))
+
+```
+
+
+
