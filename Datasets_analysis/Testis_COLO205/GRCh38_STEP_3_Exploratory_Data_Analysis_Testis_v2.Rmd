@@ -715,12 +715,11 @@ for file in  "${ANALYSIS_FOLDER}"/downloaded_samples/*.trimmed.fastq.gz;
 do 
 samp=`basename ${file}`; 
 echo "Processing sample ${samp} start: $(date)"; 
-echo ${samp} | tee -a  "${ANALYSIS_FOLDER}/trimmed_reads.txt" ;
-zcat ${file} | awk '{s++}END{print s/4}' -  | tee -a  "${ANALYSIS_FOLDER}/trimmed_reads.txt" ;
+numb_reads=`zcat ${file} | awk '{s++}END{print s/4}' -`; 
+echo "${samp}    ${numb_reads}" | tee -a  "${ANALYSIS_FOLDER}/trimmed_reads_v2.txt";
 echo "end:$(date)";
 done
 ```
-
 
 ### iii. Spike-ins for dilutions and treated\non-treated
 
