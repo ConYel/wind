@@ -365,6 +365,7 @@ transcripts_pi_hg38_clean %>% count(name) %>% nrow #>  23,116 piRNAs final piRNA
 ```
 ### vii. RNAcentral. + piRNABank. make annotation tibble
 create a tibble with the information of RNAcentral, piRNAbank sequences and IDs
+
 ```{r annotation tibble}
 hg38_piBAnk_RCent <- transcripts_GR %>% 
   left_join(piRNAbank_hg38_tib, by = c("dna" = "seq_piBn")) 

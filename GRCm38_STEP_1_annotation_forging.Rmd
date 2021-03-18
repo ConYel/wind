@@ -298,7 +298,7 @@ transcripts_GR <- transcripts_GR %>%  # [929,168] GRs / [90,056] sRNA_id -> [97,
 piRNAbank_mm10 <- here("mouse_data","piRNABank", "piBnk_GRCm38_v34_fin.fasta") %>% 
   Biostrings::readDNAStringSet()
 
-piRNAbank_mm10_tib <- piRNAbank_mm10 %>% # 55,548 sequences
+piRNAbank_mm10_tib <- piRNAbank_mm10 %>% # 55,548 GRs
   as.character() %>% 
   enframe(value = "seq_piBn") %>% 
   mutate(sRNA_type ="piRNA",
