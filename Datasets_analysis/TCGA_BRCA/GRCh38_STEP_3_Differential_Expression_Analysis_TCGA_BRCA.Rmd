@@ -311,9 +311,11 @@ piRNAs_DE <- list.files(path = dirname(dat_path[1]),
 fc_cpm <- fc_norm %>% 
   .[["TMM"]] %>% 
    cpm(log =TRUE) %>%
-  .[rownames(.) %in% piRNAs_DE$smallRNA,] 
+  .[rownames(.) %in% piRNAs_DE$smallRNA,]
+```
+### iii. make the matrices for the heatmap
 
-# make the matrices for the heatmap -----
+```{r heatmap mats}
 FC_mat_1 <- fc_cpm %>% 
   t() %>% scale() %>% t()
 FC_mat_1 %>% dim()
@@ -330,10 +332,10 @@ lfc_piRNAs_DE %>% head()
 hist(lfc_piRNAs_DE)
 
 lfc_piRNAs_DE <- lfc_piRNAs_DE[rownames(FC_mat_1) ,]
+```
+### iv add the Annotation ----
 
-colnames(FC_mat_1) <- colnames(FC_mat_1) %>% str_remove("_GR_")
-
-# add the Annotation ----
+```{r heatmap annot}
 #expression
 ha_1 <- HeatmapAnnotation(Group = fc_norm[["TMM"]]$samples$group,
                           annotation_name_side = "left",
@@ -357,8 +359,11 @@ f_1_LFCs <- colorRamp2(c(quantile(lfc_piRNAs_DE, probs = 0.25) %>% round,
                     mean(lfc_piRNAs_DE),
                     quantile(lfc_piRNAs_DE, probs = 0.75) %>% round),
                     c("forestgreen", "black", "red"))
+```
+### v.make the  Heatmaps ------
 
-## Heatmaps ------
+```{r heatmaps }
+
 ht_1 <- Heatmap(matrix = FC_mat_1, #data
         top_annotation = ha_1, #annot
         col = f_1, #colors data    
@@ -375,6 +380,7 @@ ht_1 <- Heatmap(matrix = FC_mat_1, #data
 rownames(lfc_piRNAs_DE) <- lfc_piRNAs_DE %>% 
   rownames() %>% 
   str_remove("_GR_.+")
+
 ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
         top_annotation = ha_1_LFCs, #annot
         col = f_1_LFCs, #colors data    
@@ -392,8 +398,8 @@ ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
 #draw(ht_1+ht_1_lFCs,column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"),
 #     merge_legend = TRUE)
 
-tiff(filename = file.path(dirname(dat_path[1]),"BRCA_TCGA_tumour_vs_normal_heatmap_FC.tiff"), 
-     compression = "none", height = 10, width = 14,  units = 'in', res = 300)
+tiff(filename = file.path(dirname(dat_path[1]),str_c("BRCA_TCGA_tumour_vs_normal_heatmap_FC_", todate,".tiff")), 
+     compression = "none", height = 10, width = 14,  units = 'in', res = 600)
 draw(ht_1 + ht_1_lFCs,
      column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"), 
      merge_legend = TRUE)
