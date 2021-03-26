@@ -19,8 +19,164 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ```
 
-## 1. Provide extra information regarding genomic locations,
-genes, transcripts, for the GTF
+# 1. Provide additional information regarding piRNA sequences and their genomic locations. 
+
+## 1.1 piRNA Cluster DataBase
+We use the [piRNA Cluster DataBase](https://www.smallrnagroup.uni-mainz.de/piCdb/) in order to find which of the piRNA sequences of the new gtf are inside piRNA Clusters
+
+```{bash piCdb}
+docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
+
+wget https://www.smallrnagroup.uni-mainz.de/piCdb/data/Homo_sapiens/piRNAclusters.gtf -O my_data/human_data/piRNAclusters_piCdb_hg38.gtf
+exit
+
+docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
+-e USER=$UID congelos/rocker_tidyverse_plus_de_pckages
+```
+### i. load libraries
+
+```{r}
+suppressPackageStartupMessages({
+library("tidyverse")
+library("plyranges")  
+  })
+```
+### ii. Import the complete gtf and the piCdb
+
+```{r sncRNA and piCdb}
+gtf_piB_RCentr <- file.path("human_data", "sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
+  read_gff2()
+  
+piCdb <- file.path("human_data", "piRNAclusters_piCdb_hg38.gtf") %>% 
+  read_gff2() %>% 
+  keepStandardChromosomes(pruning.mode = "coarse") %>% 
+  as_tibble() %>% 
+  mutate(seqnames = seqnames %>% str_c("chr",.) %>% as_factor(),
+         piCluster = str_c(seqnames, start, end, sep = "_")) %>% 
+  as_granges() 
+```
+### iii. findoverlaps between the two gtf
+
+```{r overlaps piCdb}
+gtf_piB_RCentr_piCdb <- gtf_piB_RCentr %>% 
+  filter(gene_type == "piRNA") %>% 
+  find_overlaps(piCdb, maxgap = -1L, minoverlap = 15L)
+
+piRNA_GRs_Clusters <- gtf_piB_RCentr_piCdb %>% 
+  select(piCluster) %>% 
+  as_tibble() %>% 
+  unite(col = "sequences_piRNA", seqnames:strand, sep = "_") %>% 
+  distinct(sequences_piRNA, piCluster, .keep_all = TRUE)
+  
+# add as metadata the information about piRNA clusters
+gtf_piB_RCentr_piCdb <- gtf_piB_RCentr %>% 
+  as_tibble() %>% 
+  unite(col = "sequences_piRNA", seqnames:strand, sep = "_") %>% 
+  left_join(piRNA_GRs_Clusters) %>% 
+  separate(col = sequences_piRNA,
+           into = c("seqnames", "start","end","width","strand"), 
+           sep = "_", convert = TRUE) %>% 
+  mutate(source = as.character(source),
+         source = 
+           if_else(!is.na(piCluster),
+                   true = str_c(source, ",proTRAC"),
+                   false = source)) %>% 
+  as_granges()
+
+# save the new gtf
+dir.create(file.path("human_data", "additional_info_piRNAs_GRs"))
+gtf_piB_RCentr_piCdb %>% 
+  write_gff2(file.path("human_data", "additional_info_piRNAs_GRs", "sncRNA_piRNBnk_RNACent_piCdb_GRCh38_v34.gtf"))
+```
+
+## 1.2 Find multimapping between piRNAs
+
+```{r multimapping piRNAs}
+multi_test <- gtf_piB_RCentr_piCdb %>% 
+  #filter(gene_type == "piRNA") %>% 
+  select(gene_id, seq_RNA, gene_type) %>%
+  join_overlap_self_directed() %>% 
+  arrange(seqnames)
+
+multi_test %>% 
+  filter(gene_type == "piRNA",
+    gene_id != gene_id.overlap) %>%
+  as_tibble() %>% 
+  count(gene_type, gene_type.overlap, sort = T) %>% 
+  write_tsv(file.path("human_data", "additional_info_piRNAs_GRs",
+          "piRNA_GR_overlapping_sncRNAs_gene_types.txt"))
+
+gtf_piB_RCentr_piCdb %>% 
+  filter(gene_type == "piRNA") %>% 
+  as_tibble() %>% 
+  count(gene_id, sort = T) %>% 
+  write_tsv(file.path("human_data", "additional_info_piRNAs_GRs",
+                      "GRs_per_piRNA.txt"))
+```
+## 1.3 Find how many piRNAs are in common or not between piRNABank and RNAcentral in the new gtf 
+```{r}
+# piRNA sequences only in piRNAbank: 353
+piRNA_BANK <- gtf_piB_RCentr_piCdb %>% 
+  dplyr::select(gene_id, gene_type, sRNA_id, source) %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = TRUE) %>% 
+  filter(str_detect(source, "piRNA_BANK$|piRNA_BANK,proTRAC$"))
+
+# piRNA sequences only in RNAcentral:  8,444
+RNAcentral <- gtf_piB_RCentr_piCdb %>% 
+  dplyr::select(gene_id, gene_type, sRNA_id, source) %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = TRUE) %>% 
+   filter(gene_type == "piRNA",
+          !is.na(sRNA_id),
+          !str_detect(source, "piRNA_BANK"))
+
+# piRNA sequences common between RNAcentral and piRNABank:  19,203
+common <- gtf_piB_RCentr_piCdb %>% 
+  dplyr::select(gene_id, gene_type, sRNA_id, source) %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = TRUE) %>% 
+  filter(str_detect(source, "piRNA_BANK,"),
+          !is.na(sRNA_id)) 
+
+# all piRNA sequences: 28,000
+all <- gtf_piB_RCentr_piCdb %>% 
+   dplyr::select(gene_id, gene_type, sRNA_id, source) %>% 
+   filter(gene_type == "piRNA") %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = TRUE)
+  
+```
+
+## 1.3. Find which piRNAs are inside Trasposable Elements
+
+We download a gtf file with the information about genomic regions of 
+Transposable Elements for human genome: http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/
+more precisely: [GRCh38_GENCODE_rmsk_TE.gtf.gz](
+http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/GRCh38_GENCODE_rmsk_TE.gtf.gz)
+### i. download the TE information
+
+```{bash}
+wget http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/GRCh38_GENCODE_rmsk_TE.gtf.gz -O my_data/human_data/additional_info_piRNAs_GRs/GRCh38_GENCODE_rmsk_TE.gtf.gz
+```
+### ii. create a gtf with metadata about TEs
+
+```{r Trasposable Elements annotation}
+TEs <- file.path("human_data", "additional_info_piRNAs_GRs", "GRCh38_GENCODE_rmsk_TE.gtf.gz") %>%  
+  read_gff2() %>% 
+  select("TE_gene_id" = gene_id, "TE_transcript_id" = transcript_id, 
+   "TE_family_id" = family_id, "TE_class_id" = class_id) %>% 
+  keepStandardChromosomes(pruning.mode = "coarse") %>% 
+  arrange(seqnames) 
+
+gtf_piB_RCentr_piCdb %>% 
+  filter(gene_type == "piRNA") %>% 
+  find_overlaps_directed(TEs) %>% 
+  write_gff2(file.path("human_data", "additional_info_piRNAs_GRs",
+                      "TEs_piRNAbank_rCentral_piCdb.gtf"))
+```
+
+## 1.3
 ### i. Load libraries
 
 ```{r bumphunter libraries}
@@ -35,14 +191,14 @@ library('stats')
 ### ii. Import regions of transcripts
 
 ```{r transcript regions bumphunter}
-genes <- annotateTranscripts(TxDb.Hsapiens.UCSC.hg38.knownGene, annotation="org.Hs.eg.db") %>% 
+genes <- annotateTranscripts(TxDb.Hsapiens.UCSC.hg38.knownGene, annotation = "org.Hs.eg.db") %>% 
   keepStandardChromosomes(pruning.mode="coarse") %>% 
   arrange(seqnames)
 
-piRNAbank_rCentral_gtf <- read_gff2("ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf")
+gtf_piB_RCentr_piCdb
 
 identical(genes %>% seqlevels(), 
-          piRNAbank_rCentral_gtf %>% seqlevels())
+          gtf_piB_RCentr_piCdb %>% seqlevels())
 
 piRNAbank_rCentral_gtf %>% length()
 
@@ -98,303 +254,7 @@ res_chr <- bind_rows(res_chr) %>%
     gene_type, sRNA_id, source, seq_RNA) %>% 
   write_tsv("gene_regions_piRNAbank_rCentral.txt")
 ``` 
-## 5. Find multimapping piRNAs
-
-```{r multimapping piRNAs}
-multi_test <- piRNAbank_rCentral_gtf %>%
-    plyranges::select(gene_id, seq_RNA, gene_type) %>% join_overlap_inner_directed(plyranges::select(piRNAbank_rCentral_gtf, gene_id, gene_type, seq_RNA)) %>% 
-  arrange(seqnames)
-
-multi_test %>% 
-  filter(gene_type.x == "piRNA", 
-    !gene_id.x == gene_id.y ) %>%
-  as_tibble() %>% 
-  count(gene_type.x, gene_type.y, sort = T) %>% 
-  write_tsv("genomic_locations_stats_multi.txt")
-
-piRNAbank_rCentral_gtf %>% 
-  filter(gene_type == "piRNA") %>% 
-  plyranges::select(-c(score, phase, source, type)) %>% 
-  as_tibble() %>% 
-  unite(col = "seq_s",seqnames:strand, sep = "_") %>% 
-  count(gene_id, sort = T) %>% write_tsv("genomic_locations_stats_multi_piRNA.txt")
-```
-## 6. Find how many piRNAs are in common and uncommon in piRNABank and RNAcentral in the new gtf 
-
-```{r}
-c_piBNK_RCent %>% distinct(seq_id, .keep_all = T)
-
-c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(is.na(sRNA_type),gene_type == "piRNA")
-
-c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(!is.na(sRNA_type),is.na(sRNA_id),gene_type == "piRNA")
-
-c_piBNK_RCent %>% distinct(seq_id, .keep_all = T) %>% filter(!is.na(name),!is.na(sRNA_id), gene_type== "piRNA")
-```
-## 7. Find which smallRNAs are inside Trasposable Elements
-
-We have downloaded a gtf file with the information about genomic regions of 
-Transposable Elements for human genome: http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/
-more precisely: [GRCh38_GENCODE_rmsk_TE.gtf.gz](
-http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/GRCh38_GENCODE_rmsk_TE.gtf.gz)
-```{r Trasposable Elements annotation}
-TEs <- read_gff2("GRCh38_GENCODE_rmsk_TE.gtf.gz") %>% 
-  plyranges::select("TE_gene_id" = gene_id, "TE_transcript_id" = transcript_id, 
-   "TE_family_id" = family_id, "TE_class_id" = class_id) %>% 
-  keepStandardChromosomes(pruning.mode = "coarse") %>% 
-  arrange(seqnames) 
-
-piRNAbank_rCentral_gtf %>% 
-  plyranges::select(gene_id, sRNA_id,gene_type, seq_RNA) %>% 
-  find_overlaps_directed(TEs) %>% 
-  write_gff2("TEs_piRNAbank_rCentral.gtf")
-
-piRNAbank_rCentral_gtf %>% 
-  join_overlap_left_directed( piRNAbank_rCentral_gtf %>% 
-  find_overlaps_directed(TEs)) %>% length()
-
-piRNAbank_rCentral_gtf %>% 
-  find_overlaps_directed(TEs) %>% 
-  plyranges::reduce_ranges_directed() %>% length()
-
-```
-## 8. Optional~  
-###  
-### iii. piRNA histograms
-
-```{bash make txts for histograms}
-## filter for reads of 15-49 bases
-for file in my_data/spike_ins/star_results/*/*_sorted.bam; 
-do
-where_to_save=`dirname ${file}`; 
-regex=`basename ${file}`; 
-samp="${regex%%.trimmed_sorted.bam}"; 
-echo "Processing sample ${samp} start: $(date)";  
-samtools view -h -@ 6 ${file} | awk 'length($10) > 14 && length($10) < 50 || $1 ~ /^@/' | samtools view -bS - >  ${where_to_save}/${samp}_filt_15_49_sorted.bam;
-echo "end:$(date)"; 
-done
-
-## find length of reads from STAR - featureCounts
-cut -f1 my_data/piRNAs_hist.txt > my_data/piRNA_ids.txt
-
-for file in my_data/spike_ins/star_results/*.featureCounts.bam; 
-do
-where_to_save=`dirname ${file}`; 
-regex=`basename ${file}`; 
-samp="${regex%%.trimmed_sorted.bam.featureCounts.bam}"; 
-echo "Processing sample ${samp} start: $(date)";  
-samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$18}'| sed 's/XT:Z://g' | grep -F -w -f my_data/piRNA_ids.txt  - | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_15_49_hist.txt;
-echo "end:$(date)"; 
-done
-
-## find length of reads from salmon
-for file in my_data/spike_ins/quants/*_sorted.bam; 
-do
-where_to_save=`dirname ${file}`; 
-regex=`basename ${file}`; 
-samp="${regex%%.trimmed*}"; 
-echo "Processing sample ${samp} start: $(date)";
-samtools view  -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print $1,length($10),$3}'| sort -k1,1 | bedtools groupby -g 1 -c 2,3 -o first,distinct -delim "," | cut -f2,3 | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_allRNA.txt;
-echo "end:$(date)"; 
-done
-
-
-samtools view -@ 6 ${file} | awk 'BEGIN{FS=OFS="\t"}{print length($10),$3}'| grep -F -w -f my_data/piRNA_ids.txt  - | sort -k2,2 | uniq -c | sed -e 's/^ *//g'| sed 's/ /\t/g' > ${where_to_save}/${samp}_hist_pirna.txt;
-
-```
-### iv. ggplot for histograms
-
-```{r make histograms}
-library(tidyverse)
-piRNAs_hist <- read_tsv("piRNAs_hist.txt")
-# gtf_piB_RCentr <- read_gff2("ncRNA_transcripts_100bp_RNA_Central_piRNAbank_hg38.gtf") %>% 
-  as_tibble() %>% 
-  select(gene_id,gene_type) %>% 
-  distinct(gene_id, .keep_all = T)
-# FC and salmon files -------
-hist_files_fc <- list.files(path ="spike_ins/star_results",
-                         pattern = "49_hist.txt", 
-                         recursive = TRUE, full.names = TRUE)
-
-hist_files_salmon <- list.files(path ="spike_ins/quants",
-                         pattern = "_hist_allRNA.txt", 
-                         recursive = TRUE, full.names = TRUE)
-
-test1 <- read_tsv(hist_files_fc[1], col_names = c("Reads", "Length", "sncRNA")) 
-  
-gtf_piB_RCentr <- gtf_piB_RCentr %>% 
-  add_case(gene_id= "SS_22", gene_type = "piRNA")
-
-no_piRNA_reg_ex <- gtf_piB_RCentr %>% 
-  as_tibble() %>% 
-  filter(!gene_type == "piRNA") %>% 
-  distinct(gene_id) %>% 
-  .$gene_id %>% 
-  str_c(collapse = "|")
-
-itest1 <- test1 %>% 
-  mutate(Length = as_factor(Length))
-
-# featurecounts facet hist-----
-pdf(str_glue("histograms_piRNA_reads_facets_fc.pdf"))
-map(hist_files_fc, ~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
-  mutate(Length = as_factor(Length))  %>% 
-  mutate(Alignment = if_else(str_detect(sncRNA, no_piRNA_reg_ex),
-                             true = "Multimapped",
-                             false = "Unique" )) %>% 
-
-  group_by(Length,Alignment) %>% 
-  summarise( Reads = sum(Reads)) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  facet_grid(Alignment ~ .)+
-  ggtitle(hist_files_fc[1] %>% basename %>% str_remove("_hist_pirna.txt"))
-)
-dev.off()
-
-## pick only spike_ins----
-spike_reg_ex <- piRNAs_hist %>% 
-  filter(gene_type == "spike_in") %>%
-  .$gene_id %>% 
-  str_c(collapse = "|") %>% 
-  set_names("spike_ins")
-
-piRNA_reg_ex <- piRNAs_hist %>% 
-  filter(gene_type == "piRNA") %>% 
-  .$gene_id %>% 
-  str_c(collapse = "|") %>% 
-  set_names("piRNA")
-
-miRNA_reg_ex <- gtf_piB_RCentr %>% 
-  as_tibble() %>% 
-  filter(gene_type == "miRNA") %>% 
-  distinct(gene_id) %>% 
-  .$gene_id %>% 
-  str_c(collapse = "|") %>% 
-  set_names("miRNA")
-
-pdf(str_glue("histograms_spike_ins_reads_Salmon.pdf"))
-
-map(hist_files_salmon,~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
-  mutate(Length = as_factor(Length)) %>% 
-  filter(str_detect(sncRNA,spike_reg_ex)) %>%
-  group_by(Length) %>% 
-  summarise(Reads = sum(Reads)) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","spike_ins"))
-)
-  dev.off()
-
-pdf(str_glue("histograms_piRNA_reads_FC_filtered.pdf"))
-
-map(hist_files_fc, ~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
-  mutate(Length = as_factor(Length)) %>% 
-  filter(str_detect(sncRNA,piRNA_reg_ex)) %>%
-  group_by(Length) %>% 
-  summarise(Reads = sum(Reads)) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","piRNA"))
-)
-  dev.off()
-  
-pdf(str_glue("histograms_miRNA_reads_Salmon.pdf"))
-
-map(hist_files_salmon,~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
-  mutate(Length = as_factor(Length)) %>% 
-  filter(str_detect(sncRNA,miRNA_reg_ex)) %>%
-  group_by(Length) %>% 
-  summarise(Reads = sum(Reads)) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","miRNA"))
-)
-  dev.off()
-  
-  
-pdf(str_glue("histograms_all_RNA_reads_Salmon.pdf"))
-
-map(hist_files_salmon,~read_tsv(.x, col_names = c("Reads", "Length", "sncRNA")) %>% 
-  mutate(Length = as_factor(Length)) %>% 
-  #filter(str_detect(sncRNA,miRNA_reg_ex)) %>%
-  group_by(Length) %>% 
-  summarise(Reads = sum(Reads)) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length, y = Reads), stat = "identity")+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  ggtitle(.x %>% basename %>% str_replace("allRNA.txt","all_RNA"))+
-  coord_flip()
-)
-  dev.off()  
-
-  
-## piRNA reads ------
-reads_piRNA <- read_tsv("reads_piRNA.txt",
-                        col_names = c("Read","Length","sRNAs","read_sequence", "Sigar"))  
-
-reads_piRNA %>% count(Sigar)
-reads_piRNA %>% count(Length)
-
-piRNA_reads <- reads_piRNA %>% 
-  select(Read, sRNAs, read_sequence, Length) %>% 
-  separate(sRNAs, str_c("V",1:2), 
-           extra = "merge", fill = "right", sep = ",") %>% 
-  filter(is.na(V2)) %>% 
-  select(-V2) %>% 
-  filter(str_detect(V1, piRNA_reg_ex))
-
-piRNA_reads %>% 
-  mutate(Length = as_factor(Length)) %>% 
-  group_by(Length) %>% 
-  #summarise(Read) %>% 
-  ggplot() +
-  geom_bar(mapping = aes(x = Length))+
-  scale_y_continuous(labels = scales::comma)+
-  theme_minimal()+
-  ggtitle("COLO205_dil_A_NT_1_piRNA_reads" %>% basename %>% str_replace("allRNA.txt","all_RNA"))+
-  coord_flip()
-
-
-key_mIrna_pIrna <- gtf_piB_RCentr %>% 
-  as_tibble() %>% 
-  distinct(gene_id, .keep_all = T) %>% 
-  select(gene_id,seq_RNA,gene_type)
-
-test_mut_reads <- reads_piRNA %>% 
-  #head(1000) %>% 
-  filter(str_detect(sRNAs, miRNA_reg_ex)) %>% 
-  select(Read, sRNAs, read_sequence) %>% 
-  separate(sRNAs, str_c("V",1:12), 
-           extra = "merge", fill = "right", sep = ",") %>%
-  pivot_longer(cols = starts_with("V"), 
-               names_to = "alignment", values_to = "sRNAs", values_drop_na = T) %>% 
-  left_join(key_mIrna_pIrna, by = c("sRNAs" = "gene_id"))
-  
-test_mut_reads %>% filter(gene_type %in% c("miRNA", "piRNA")) 
-test_mut_reads %>% 
-  group_by(Read) %>% 
-
-# different way -----
-mutate_all(~replace(., is.na(.), "SS_22"))
-
-get_gene_type <- function(x){key_mIrna_pIrna %>% 
-  filter(gene_id== x) %>% 
-  .$seq_RNA}
-
-test_mut_reads %>% head %>% 
-  mutate_at(vars(starts_with("V")), ~map_chr(.,get_gene_type)) 
-
-```
-## 9. piRNA targets prediction
+# 2. piRNA targets prediction
 Extract the 3', 5' and CDS from the primary GTF of GRCH38 Gencode
 ### i. find the genomic regions 3', 5' UTR and CDS
 
@@ -537,58 +397,4 @@ targets <- list.files(path = file.path("human_data",
   write_tsv(file.path("human_data",
                       "piRNA_Targets", 
                       "piRNA_predicted_Targets.v02.txt"))
-```
-## 10.  Cross the small non-coding RNA IDs from RNAcentral with the names of other databases
-
-```{r}
-# download the RNAcentral file that has all IDs and the names----
-library(tidyverse)
-library(vroom)
-## for human NCBI_taxon_id:9606 ----
-rnacentral_ids <- data.table::fread("../genome_transc_human/id_mapping.tsv.gz", 
-                        col.names = c("RNAcentral_id", 
-                                      "Database",
-                                      "external_id",
-                                      "NCBI_taxon_id",
-                                      "RNA_type",
-                                      "gene_name")) %>% 
-  filter(NCBI_taxon_id == "9606") %>%
-  select(-NCBI_taxon_id) %>%
-  arrange(RNAcentral_id, external_id,desc(gene_name)) %>% 
-  distinct(RNAcentral_id, external_id, gene_name, .keep_all = T) %>%
-  unite(col = ext_id_gene_name,c("external_id", "gene_name"), sep = "_gn_") %>% 
-  pivot_wider(names_from = Database, 
-              values_from = ext_id_gene_name, 
-              values_fn = toString) %>% 
-  write_tsv("../genome_transc_human/rnacentral_ids_hg38.txt")
-
-```
-## Venn diagram
-common expressed piRNA between testis samples and COLO205
-```{r}
-library(VennDiagram)
-
-salmon_FC_groups <- read_tsv("../testis_colo_pub_workflow/ExpDatAnalysis_testis_colo205_hg38_22_Oct_2020/salmon_FC_cpm_union_grouped.txt")
-
-salmon_FC_groups %>% 
-  filter(gene_type == "piRNA") %>% 
-  filter(Testis_pool_salmon > 0 | Testis_pool_fc > 0) 
-
-salmon_FC_groups %>% 
-     filter(gene_type == "piRNA") %>% 
-     filter(COLO205_salmon > 0 | COLO205_fc > 0)
-
-salmon_FC_groups %>% 
-     filter(gene_type == "piRNA") %>% 
-     filter(COLO205_salmon > 0 | COLO205_fc > 0,
-            Testis_pool_salmon > 0 | Testis_pool_fc > 0)
-  
-
-grid.newpage()                                        # Move to new plotting page
-draw.pairwise.venn(area1 = 6982,                          # Add name to each set
-                 area2 = 240,
-                 cross.area = 234,
-                 category = c("testis", "COLO205"),
-                 fill = c("red", "blue"),
-                 lty = "blank")
 ```
