@@ -27,7 +27,11 @@ We use the [piRNA Cluster DataBase](https://www.smallrnagroup.uni-mainz.de/piCdb
 ```{bash piCdb}
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/sncrna_workflow
 
+# for hg38
 wget https://www.smallrnagroup.uni-mainz.de/piCdb/data/Homo_sapiens/piRNAclusters.gtf -O my_data/human_data/piRNAclusters_piCdb_hg38.gtf
+
+# for mm10
+wget https://www.smallrnagroup.uni-mainz.de/piCdb/data/Mus_musculus/piRNAclusters.gtf -O my_data/mouse_data/piRNAclusters_piCdb_mm10.gtf
 exit
 
 docker run --rm -v $(pwd):/home/0 -p 8787:8787 -e PASSWORD=12345 \
@@ -55,11 +59,24 @@ piCdb <- file.path("human_data", "piRNAclusters_piCdb_hg38.gtf") %>%
          piCluster = str_c(seqnames, start, end, sep = "_")) %>% 
   as_granges() 
 ```
+
+### same for mouse
+```{bash}
+git clone https://github.com/NCBI-Hackathons/Master_gff3_parser.git
+
+cd Master_gff3_parser/
+python setup.py install
+
+cd ..
+seqconv convert --ref mm10 --in rs --out uc  my_data/mouse_data/piRNAclusters_piCdb_mm10.gtf > my_data/mouse_data/piRNAclusters_piCdb_mm10_ucsc_chr_ids.gtf
+
+```
 ### iii. findoverlaps between the two gtf
 
 ```{r overlaps piCdb}
 gtf_piB_RCentr_piCdb <- gtf_piB_RCentr %>% 
   filter(gene_type == "piRNA") %>% 
+  keepStandardChromosomes(pruning.mode = "coarse") %>% 
   find_overlaps(piCdb, maxgap = -1L, minoverlap = 15L)
 
 piRNA_GRs_Clusters <- gtf_piB_RCentr_piCdb %>% 
