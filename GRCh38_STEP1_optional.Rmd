@@ -146,9 +146,47 @@ all <- gtf_piB_RCentr_piCdb %>%
   as_tibble() %>% 
   distinct(gene_id, .keep_all = TRUE)
   
+
+
+
+# mouse-------------------------------
+# piRNA sequences only in piRNAbank: 2,213
+piRNA_BANK <- gtf_piB_RCentr_mouse %>% 
+  dplyr::select(gene_id, gene_type, sRNA_id, source) %>% 
+  filter(gene_type == "piRNA") %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = TRUE) %>% 
+  filter(str_detect(source, "piRNA_BANK$"))
+
+# piRNA sequences only in RNAcentral:  29,114
+RNAcentral <- gtf_piB_RCentr_mouse %>% 
+  dplyr::select(gene_id, gene_type, sRNA_id, source) %>% 
+  filter(gene_type == "piRNA") %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = TRUE) %>% 
+  filter(!is.na(sRNA_id),
+          !str_detect(source, "piRNA_BANK"))
+
+# piRNA sequences common between RNAcentral and piRNABank:  34,306
+common <- gtf_piB_RCentr_mouse %>% 
+  dplyr::select(gene_id, gene_type, sRNA_id, source) %>% 
+  filter(gene_type == "piRNA") %>%
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = TRUE) %>% 
+  filter(str_detect(source, "piRNA_BANK,"),
+          !is.na(sRNA_id)) 
+
+# all piRNA sequences: 65,633
+all <- gtf_piB_RCentr_mouse %>% 
+   dplyr::select(gene_id, gene_type, sRNA_id, source) %>% 
+   filter(gene_type == "piRNA") %>% 
+  as_tibble() %>% 
+  distinct(gene_id, .keep_all = TRUE)
+
+nrow(common)+ nrow(RNAcentral) + nrow(piRNA_BANK)
 ```
 
-## 1.3. Find which piRNAs are inside Trasposable Elements
+## 1.4. Find which piRNAs are inside Trasposable Elements
 
 We download a gtf file with the information about genomic regions of 
 Transposable Elements for human genome: http://labshare.cshl.edu/shares/mhammelllab/www-data/TEtranscripts/TE_GTF/
@@ -176,7 +214,7 @@ gtf_piB_RCentr_piCdb %>%
                       "TEs_piRNAbank_rCentral_piCdb.gtf"))
 ```
 
-## 1.3
+## 1.5 Find in which genes are inside the piRNAs
 ### i. Load libraries
 
 ```{r bumphunter libraries}
@@ -195,29 +233,32 @@ genes <- annotateTranscripts(TxDb.Hsapiens.UCSC.hg38.knownGene, annotation = "or
   keepStandardChromosomes(pruning.mode="coarse") %>% 
   arrange(seqnames)
 
-gtf_piB_RCentr_piCdb
+gtf_only_piRNAs <- gtf_piB_RCentr_piCdb %>% filter(gene_type == "piRNA") %>%  keepStandardChromosomes(pruning.mode="coarse") %>% 
+  arrange(seqnames)
 
 identical(genes %>% seqlevels(), 
-          gtf_piB_RCentr_piCdb %>% seqlevels())
+          gtf_only_piRNAs %>% seqlevels())
 
-piRNAbank_rCentral_gtf %>% length()
+gtf_only_piRNAs %>% length()
 
-map(piRNAbank_rCentral_gtf %>% seqlevels() %>% 
-      purrr::set_names(), ~piRNAbank_rCentral_gtf %>% 
-        filter(seqnames == .x) %>% 
-        length()) %>% bind_rows() %>%  
-  pivot_longer(cols = chr1:chrM) %>% 
-  arrange(desc(value))
-# chr15 has the most values of GRs with 15522
+
+# check how many GRs per chromosome
+gtf_only_piRNAs %>% 
+  as_tibble() %>% 
+  dplyr::count(seqnames, sort = TRUE)
+# chr15 has the most values of GRs with 14562
 # we will parallelize per chr.
+```
 
- if(.Platform$OS.type == "windows") {
+### iii. gene regions identification 
+```{r transcript regions bumphunter}
+if(.Platform$OS.type == "windows") {
 mt_param <- SnowParam()
  } else{
 mt_param <- MulticoreParam()
  }
-# we will work with 10 workers 
-mt_param <- MulticoreParam(workers = 10)
+# we will work with 4 workers 
+mt_param <- MulticoreParam(workers = 4)
 
 # simple function which takes lists of Grs and the chromosome 
 # name to select from each list
@@ -235,25 +276,34 @@ matchGenes_fun <- function(our_Grs, genes_GRs){
 genes_chr <- map(genes %>% seqlevels() %>% purrr::set_names(), 
   ~genes %>% filter(seqnames == .x))
 
-gen_test <- genes_chr[c("chrM","chrY")]
-
-piR_chr <- map(piRNAbank_rCentral_gtf %>% 
+piR_chr <- map(genes %>% 
     seqlevels() %>% 
-    purrr::set_names(), ~piRNAbank_rCentral_gtf %>% 
+    purrr::set_names(), ~gtf_only_piRNAs %>% 
         filter(seqnames == .x))
 
+# test for small chrs --------
+gen_test <- genes_chr[c("chrM","chrY")]
 piR_test <- piR_chr[c("chrM","chrY")]
 
+res_chr <- bpmapply(matchGenes_fun,
+  piR_test, gen_test, USE.NAMES=TRUE, SIMPLIFY = FALSE,
+    BPREDO=list(), BPPARAM = mt_param) 
+
+# run the complete list -------
 res_chr <- bpmapply(matchGenes_fun,
   piR_chr, genes_chr, USE.NAMES=TRUE, SIMPLIFY = FALSE,
     BPREDO=list(), BPPARAM = mt_param) 
 
-res_chr <- bind_rows(res_chr) %>% 
-  bind_cols(as_tibble(piRNAbank_rCentral_gtf)) %>% 
-  dplyr::select(name:subjectHits, gene_id, 
-    gene_type, sRNA_id, source, seq_RNA) %>% 
-  write_tsv("gene_regions_piRNAbank_rCentral.txt")
-``` 
+res_chr <- bind_rows(res_chr) 
+
+gtf_only_piRNAs <- piR_chr %>%  bind_ranges %>%  as_tibble()
+
+#make one dataframe
+gtf_only_piRNAs %>% 
+  bind_cols(res_chr) %>% 
+  write_tsv(file.path("human_data", "additional_info_piRNAs_GRs",
+                      "Gene_Regions_piRNAbank_RNACentral.txt"))
+```
 # 2. piRNA targets prediction
 Extract the 3', 5' and CDS from the primary GTF of GRCH38 Gencode
 ### i. find the genomic regions 3', 5' UTR and CDS
