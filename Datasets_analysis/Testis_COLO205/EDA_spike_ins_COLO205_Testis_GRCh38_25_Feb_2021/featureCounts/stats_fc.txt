@@ -1,0 +1,15 @@
+Status	Non_treated_COLO205_1	Non_treated_COLO205_2	Non_treated_COLO205_3	Non_treated_Testis_1	Treated_COLO205_1	Treated_COLO205_2	Treated_COLO205_3	Treated_testis_1	COLO205_dil_A_NT_1	COLO205_dil_B_NT_1	COLO205_dil_C_NT_1	Non_treated_Testis_2	Non_treated_Testis_3
+Assigned	94822766	44683781	43070698	100779878	29176465	17772507	23854016	21641229	39283929	46870653	37415419	70090344	72186590
+Unassigned_Unmapped	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Read_Type	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Singleton	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_MappingQuality	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Chimera	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_FragmentLength	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Duplicate	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_MultiMapping	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_Secondary	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_NonSplit	0	0	0	0	0	0	0	0	0	0	0	0	0
+Unassigned_NoFeatures	50212254	32943473	26160093	33876523	41819531	22280705	28519080	10188700	8451775	11369231	9827695	34617013	35621073
+Unassigned_Overlapping_Length	664175	311066	315080	968172	409341	165650	177483	336715	151594	161811	144286	768760	790106
+Unassigned_Ambiguity	0	0	0	0	0	0	0	0	0	0	0	0	0

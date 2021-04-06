@@ -1,0 +1,15 @@
+gene_type	fc_n	salmon_n	common_n	unique_FC_n	unique_salmon_n
+piRNA	15506	7943	7366	8140	577
+precursor_RNA	1231	835	743	488	92
+miRNA	1033	727	567	466	160
+tRNA	983	495	478	505	17
+snoRNA	421	306	301	120	5
+Y_RNA	94	69	58	36	11
+rRNA	83	29	21	62	8
+misc_RNA	62	33	33	29	NA
+spike_in	56	56	56	NA	NA
+snRNA	54	36	22	32	14
+other	13	5	4	9	1
+vault_RNA	11	7	7	4	NA
+lncRNA	3	1	NA	3	1
+scRNA	3	4	1	2	3

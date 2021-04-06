@@ -1,0 +1,10 @@
+features	number_of_features
+Starting_features:	39868
+edgeR_nobatch_filter:	10546
+edgeR_batch_filter:	10546
+NOISeq_1cpm_filter:	9026
+common_with_edgeR_nobatch:	8772
+common_with_edgeR_batch:	8772
+NOISeq_Proportion_filter:	7062
+common_with_edgeR_nobatch:	7045
+common_with_edgeR_batch:	7045
