@@ -1,0 +1,11 @@
+gene_type	gene_type.overlap	n
+piRNA	piRNA	265432
+piRNA	tRNA	1024
+piRNA	rRNA	243
+piRNA	miRNA	169
+piRNA	snoRNA	96
+piRNA	precursor_RNA	76
+piRNA	misc_RNA	21
+piRNA	other	15
+piRNA	snRNA	1
+piRNA	Y_RNA	1
