@@ -576,10 +576,11 @@ c_piRNAs_GR_prot_cod <- c_piBNK_RCent_GR %>% # GR = 155.143
   filter(gene_type == "piRNA") %>% # GR = 139.196
   find_overlaps_directed(gene_annot_exon_CDS_prot_cod, maxgap = -1L, 
                          minoverlap = 1L, suffix = c("_piRNAs", "_genes")) %>% 
-  select(starts_with(c("gene_","typ"))) %>% 
+  select(seq_id, starts_with(c("gene_","typ"))) %>% 
   as_tibble() %>% 
   unite(col = "seq_piBNK", seqnames:strand, sep = "_") %>% 
-  distinct(seq_piBNK, .keep_all = TRUE) # GR = 5.594 to be excluded
+  distinct(seq_piBNK, .keep_all = TRUE) %>% 
+  write_tsv(file.path("human_data", "excluded_sncRNA_piRNBnk_RNACent_GRCh38_v34.txt"))# GR = 5.594 to be excluded
 
 # exclude them from combined ranges
 c_piBNK_RCent_GR_filtered <- c_piBNK_RCent_GR %>% 
