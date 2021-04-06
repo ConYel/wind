@@ -1,0 +1,15 @@
+Status	aCM_1	aCM_2
+Assigned	18274435	20509054
+Unassigned_Unmapped	0	0
+Unassigned_Read_Type	0	0
+Unassigned_Singleton	0	0
+Unassigned_MappingQuality	0	0
+Unassigned_Chimera	0	0
+Unassigned_FragmentLength	0	0
+Unassigned_Duplicate	0	0
+Unassigned_MultiMapping	0	0
+Unassigned_Secondary	0	0
+Unassigned_NonSplit	0	0
+Unassigned_NoFeatures	21393712	32758570
+Unassigned_Overlapping_Length	167061	271867
+Unassigned_Ambiguity	0	0
