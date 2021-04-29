@@ -5,6 +5,7 @@
 We have developed a bioinformatics workflow that could reliably 
 characterise sequences from small-RNA sequencing to different databases 
 of small non-coding RNAs, and more precisely tackle the crucial issue regarding the piRNA annotation.
+You can find the published article here: [f1000](https://f1000research.com/articles/10-1/v1#)
 
 The workflow consists of three significant steps:  
 1. Annotation forging: the generation of the annotation files for small RNA sequences used in the next quantification step.  
