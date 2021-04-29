@@ -1,6 +1,6 @@
 # wind: wORKFLOW FOR PiRNAs AnD BEYONd
 
-<a href="https://doi.org/10.5281/zenodo.4289909"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4289909.svg" alt="DOI"></a>
+<a href="https://doi.org/10.5281/zenodo.4289908"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4289909.svg" alt="DOI"></a>
 
 We have developed a bioinformatics workflow that could reliably 
 characterise sequences from small-RNA sequencing to different databases 
