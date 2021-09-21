@@ -465,3 +465,52 @@ targets <- list.files(path = file.path("human_data",
                       "piRNA_Targets", 
                       "piRNA_predicted_Targets.v02.txt"))
 ```
+
+# 3. Graph for sncRNAs genomic regions and sequences
+Create a boxplot with all the different annotation for sncRNAs
+
+### i. import gtf annotation
+```{r}
+gtf_piB_RCentr <- file.path("human_data", "sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf.gz") %>% 
+  read_gff2()
+```
+
+### ii. make Histogram
+```{r}
+library(scales)
+
+## genomic locations
+pdf("human_data/genomic_locations_histogram_sncRNAs.pdf")
+gtf_piB_RCentr %>% 
+  as_tibble %>% 
+  ggplot(aes(x=gene_type)) + 
+  geom_histogram(stat="count", width=0.8) +
+  theme_minimal() +
+  scale_y_continuous(name = "Counts",
+                     #trans = log10_trans(),
+                     breaks = waiver(),
+                     minor_breaks = waiver(),
+                     n.breaks = 8,
+                     labels = comma) +
+  ggtitle(label = "Histogram of genomic locations for each smallRNA type") +
+  coord_flip()
+ dev.off()
+ 
+## sequences
+pdf("human_data/sequences_histogram_sncRNAs.pdf")
+gtf_piB_RCentr %>% 
+  as_tibble %>% 
+  distinct(gene_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x=gene_type)) + 
+  geom_histogram(stat="count", width=0.8) +
+  theme_minimal() +
+  scale_y_continuous(name = "Counts",
+                     breaks = waiver(),
+                     minor_breaks = waiver(),
+                     n.breaks = 8,
+                     labels = comma) +
+  ggtitle(label = "Histogram of different sequences for each smallRNA type") +
+  coord_flip()
+ dev.off()
+```
+
