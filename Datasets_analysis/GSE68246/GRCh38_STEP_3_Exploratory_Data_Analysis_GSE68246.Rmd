@@ -439,13 +439,16 @@ map2(norm_dgls, dat_path, ~function_MDS(.x,.y))
 function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 500){
   suppressPackageStartupMessages(library(DESeq2))
   # calculate the variance for each gene
-  rv <- rowVars(dgl_norm_data[[norm_method]]$counts)
+  lcpm_transformed <- cpm(dgl_norm_data[[norm_method]],
+                          normalized.lib.sizes = TRUE,
+                          log = TRUE, 
+                          prior.count = 4)
+  rv <- rowVars(lcpm_transformed)
   
   # select the ntop genes by variance
   select <- order(rv, decreasing=TRUE)[seq_len(min(ntop, length(rv)))]
-
   # perform a PCA on the data in dgl_norm_data[[norm_method]]$counts for the selected genes
-  pca <- prcomp(t(dgl_norm_data[[norm_method]]$counts[select,]))
+  pca <- prcomp(t(lcpm_transformed[select,]))
   
   # the contribution to the total variance for each component
   percentVar <- pca$sdev^2 / sum( pca$sdev^2 )
@@ -466,7 +469,7 @@ function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 5
                             color="batch", 
                             shape="group"))
   }else{
-  print("There is no batch we use only the groups")
+  print("There is no batch, we will use only the groups")
   p <- ggplot(data=d, aes_string(x="PC1", y="PC2", shape="group"))
   }
   
@@ -484,7 +487,7 @@ function_PCA <- function(dgl_norm_data, plot_path, norm_method = "TMM", ntop = 5
   
   # pdf
   par(mar=c(6,5,2,1)+ 0.1)
-  pdf(file.path(plot_path, str_glue("PCA_plot_{norm_method}_{basename(plot_path)}.pdf")))
+  pdf(file.path(plot_path, str_glue("PCA_plot_lcpm_{norm_method}_{basename(plot_path)}.pdf")))
   print(p)
   dev.off()
 }
