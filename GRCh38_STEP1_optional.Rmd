@@ -514,3 +514,70 @@ gtf_piB_RCentr %>%
  dev.off()
 ```
 
+# 4. RNAcentral mapping IDs
+## load the GTF and the IDs
+```{r}
+library(tidyverse)
+library(plyranges)
+library(vroom)
+# load the gtf file
+gtf_piB_RCentr <- file.path("mouse_data", "sncRNA_piRNBnk_RNACent_GRCm38_v34.gtf.gz") %>% 
+  read_gff2()
+
+# load the RNAcentral IDs
+rnacentral_ids_mm10 <- vroom("../wind/mouse_data/RNACentral/mus_musculus.GRCm38.id_mapping.tsv.gz", 
+                        col_names = c("RNAcentral_id", 
+                                      "Database",
+                                      "external_id",
+                                      "NCBI_taxon_id",
+                                      "RNA_type",
+                                      "gene_name")) %>% 
+  filter(NCBI_taxon_id == "10090") %>%
+  select(-c(NCBI_taxon_id, RNA_type))
+
+# rnacentral_ids_mm10 %>% count(RNAcentral_id, sort = T)
+# 185,348 sncRNAs
+
+rnacentral_ids_mm10 
+rnacentral_ids_mm10 <- rnacentral_ids_mm10 %>% 
+  arrange(RNAcentral_id, gene_name, external_id) %>% 
+  distinct(RNAcentral_id, Database, .keep_all = TRUE) %>% 
+  distinct(RNAcentral_id, external_id, .keep_all = TRUE) 
+
+multipleDBS_ids <- rnacentral_ids_mm10 %>% 
+  count(RNAcentral_id) %>% 
+  filter(n > 1) %>% 
+  select(RNAcentral_id) %>% 
+  deframe()
+
+part_2_DF <- rnacentral_ids_mm10 %>% 
+  filter(!RNAcentral_id %in% multipleDBS_ids) %>% 
+  arrange(RNAcentral_id, gene_name, external_id) 
+
+part_1_DF <- rnacentral_ids_mm10 %>% 
+  filter(RNAcentral_id %in% multipleDBS_ids) %>% 
+  distinct(RNAcentral_id, .keep_all = TRUE)
+
+attach_to_GTF <- bind_rows(part_1_DF,part_2_DF) 
+
+# merge the two files
+gtf_piB_RCentr
+attach_to_GTF %>% filter(RNAcentral_id %in% gtf_piB_RCentr$sRNA_id)
+
+new_gtf <- gtf_piB_RCentr %>% 
+  as_tibble() %>% 
+  left_join(attach_to_GTF, by = c("sRNA_id" = "RNAcentral_id")) %>% 
+  mutate(Database = ifelse(test = is.na(Database), 
+                           yes = source,
+                           no = Database),
+         external_id = ifelse(test = is.na(external_id),
+                              yes = gene_id,
+                              no = external_id)) %>% 
+  dplyr::rename("sncRNA_name" = gene_name)
+
+new_gtf %>% 
+  as_granges %>%  
+  file.path("mouse_data", "sncRNA_piRNBnk_RNACent_gene_names_GRCm38_v34.gtf.gz") %>% 
+  write_gff2()
+```
+
