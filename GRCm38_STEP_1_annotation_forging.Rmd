@@ -84,6 +84,10 @@ unzip -d my_data/mouse_data/piRNABank  my_data/mouse_data/piRNABank/piRNA_mouse_
 wget ftp://ftp.ebi.ac.uk/pub/databases/RNAcentral/releases/15.0/genome_coordinates/bed/mus_musculus.GRCm38.bed.gz \
  -O my_data/mouse_data/RNACentral/mus_musculus.GRCm38.bed.gz
 
+# download the RNAcental id mappings
+wget http://ftp.ebi.ac.uk/pub/databases/RNAcentral/releases/15.0/id_mapping/id_mapping.tsv.gz \
+ -O my_data/mouse_data/RNACentral/mus_musculus.GRCm38.id_mapping.tsv.gz
+
 # get the GRCm38 fasta for STAR index 
 wget ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M25/GRCm38.primary_assembly.genome.fa.gz \
  -O my_data/mouse_data/GRCm38/GRCm38.primary_assembly.genome.fa.gz
