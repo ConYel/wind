@@ -576,8 +576,7 @@ new_gtf <- gtf_piB_RCentr %>%
   dplyr::rename("sncRNA_name" = gene_name)
 
 new_gtf %>% 
-  as_granges %>%  
-  file.path("mouse_data", "sncRNA_piRNBnk_RNACent_gene_names_GRCm38_v34.gtf.gz") %>% 
-  write_gff2()
+  as_granges() %>%
+  write_gff2(file.path("mouse_data", "sncRNA_piRNBnk_RNACent_gene_names_GRCm38_v34.gtf.gz"))
 ```
 
