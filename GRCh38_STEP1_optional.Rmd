@@ -515,7 +515,8 @@ gtf_piB_RCentr %>%
 ```
 
 # 4. RNAcentral mapping IDs
-# mouse
+
+## mouse mm10
 ### load the GTF and the IDs
 ```{r}
 library(tidyverse)
@@ -580,7 +581,8 @@ new_gtf %>%
   as_granges() %>%
   write_gff2(file.path("mouse_data", "sncRNA_piRNBnk_RNACent_gene_names_GRCm38_v34.gtf.gz"))
 ```
-# human
+
+## human hg38
 ### load the GTF and the IDs
 ```{r}
 library(tidyverse)
