@@ -600,14 +600,93 @@ rnacentral_ids_hg38 <- vroom("./mouse_data/RNACentral/mus_musculus.GRCm38.id_map
                                       "NCBI_taxon_id",
                                       "RNA_type",
                                       "gene_name")) %>% 
-  filter(NCBI_taxon_id == "9606") %>%
-  select(-c(NCBI_taxon_id, RNA_type))
+  filter(NCBI_taxon_id == "9606") %>% # pick human taxon
+  select(-c(NCBI_taxon_id))
 
 # rnacentral_ids_hg38 %>% count(RNAcentral_id, sort = T)
 # 253,851 sncRNAs
+```
 
-rnacentral_ids_hg38 
+#### miRNA
+```{r}
+# check miRNA names
+miRNA_id <- rnacentral_ids_hg38 %>% 
+  filter(RNA_type == "miRNA") %>% 
+  count(RNAcentral_id) %>% 
+  magrittr::extract("RNAcentral_id")
+  
+miRNA <- rnacentral_ids_hg38 %>% 
+   filter(RNA_type == "miRNA") %>%  
+   mutate(
+     gene_name_2 = case_when(
+     is.na(gene_name) ~ external_id,
+     str_detect(gene_name, regex("mir", ignore_case = TRUE)) ~ gene_name,
+     str_detect(external_id, regex("hsa-mir-|mir", ignore_case = TRUE)) ~ external_id,
+     TRUE ~ gene_name)) 
+
+# filter for miRNA names with hsa-mir 
+miRNA_hsa <- miRNA %>% 
+  filter(str_detect(gene_name_2, regex("hsa-mir|hsa-let", ignore_case = TRUE))) %>% 
+  distinct(RNAcentral_id, .keep_all = TRUE) %>% 
+  select(-c(RNA_type, gene_name)) %>% 
+  mutate(gene_name_2 = tolower(gene_name_2))
+
+# pick the rest mirna
+miRNA_rest <- miRNA %>% 
+  filter(!RNAcentral_id %in% miRNA_hsa$RNAcentral_id) %>% 
+  arrange(RNAcentral_id, gene_name, desc(gene_name_2)) %>%
+  distinct(RNAcentral_id, .keep_all = TRUE) %>% 
+  select(-c(RNA_type, gene_name)) 
+
+miRNA <- bind_rows(miRNA_hsa, miRNA_rest) %>% 
+  dplyr::rename("gene_name" = gene_name_2)
+
+identical(arrange(miRNA, RNAcentral_id)$RNAcentral_id, arrange(miRNA_id, RNAcentral_id)$RNAcentral_id )
+```
+
+#### precursor miRNA
+```{r}
+precursor_miRNA_id <- rnacentral_ids_hg38 %>% 
+  filter(RNA_type == "precursor_RNA") %>% 
+  count(RNAcentral_id) %>% 
+  magrittr::extract("RNAcentral_id") %>% 
+  arrange()
+  
+precursor_miRNA <- rnacentral_ids_hg38 %>% 
+  filter(RNA_type == "precursor_RNA") %>% 
+  #group_by(RNAcentral_id) %>% 
+   mutate(
+     gene_name_2 = case_when(
+     is.na(gene_name) ~ external_id,
+     str_detect(gene_name, regex("mir", ignore_case = TRUE)) ~ gene_name,
+     str_detect(external_id, regex("mir|let", ignore_case = TRUE)) ~ external_id,
+     TRUE ~ gene_name)) 
+
+# filter for precursor names with hsa-mir 
+precursor_miRNA_hsa <- precursor_miRNA %>% 
+  filter(str_detect(gene_name_2, regex("mir|let", ignore_case = TRUE))) %>% 
+  distinct(RNAcentral_id, .keep_all = TRUE) %>% 
+  select(-c(RNA_type, gene_name)) %>% 
+  mutate(gene_name_2 = tolower(gene_name_2))
+
+# pick the rest precursor
+precursor_miRNA_rest <- precursor_miRNA %>% 
+  filter(!RNAcentral_id %in% precursor_miRNA_hsa$RNAcentral_id) %>% 
+  arrange(RNAcentral_id, gene_name_2) %>%
+  distinct(RNAcentral_id, .keep_all = TRUE) %>% 
+  select(-c(RNA_type, gene_name)) 
+
+precursor_miRNA <- bind_rows(precursor_miRNA_hsa, precursor_miRNA_rest) %>% 
+  dplyr::rename("gene_name" = gene_name_2)
+
+identical(arrange(precursor_miRNA, RNAcentral_id)$RNAcentral_id, arrange(precursor_miRNA_id, RNAcentral_id)$RNAcentral_id )
+```
+
+#### other sncRNAs
+```{r}
+rnacentral_ids_hg38
 rnacentral_ids_hg38 <- rnacentral_ids_hg38 %>% 
+  filter(!RNA_type %in% c("miRNA", "precursor_RNA")) %>% 
   arrange(RNAcentral_id, gene_name, external_id) %>% 
   distinct(RNAcentral_id, Database, .keep_all = TRUE) %>% 
   distinct(RNAcentral_id, external_id, .keep_all = TRUE) 
@@ -620,13 +699,16 @@ multipleDBS_ids <- rnacentral_ids_hg38 %>%
 
 part_2_DF <- rnacentral_ids_hg38 %>% 
   filter(!RNAcentral_id %in% multipleDBS_ids) %>% 
-  arrange(RNAcentral_id, gene_name, external_id) 
+  arrange(RNAcentral_id, gene_name, external_id) %>% 
+  select(-RNA_type)
 
 part_1_DF <- rnacentral_ids_hg38 %>% 
   filter(RNAcentral_id %in% multipleDBS_ids) %>% 
-  distinct(RNAcentral_id, .keep_all = TRUE)
+  distinct(RNAcentral_id, .keep_all = TRUE) %>% 
+  select(-RNA_type)
 
-attach_to_GTF <- bind_rows(part_1_DF,part_2_DF) 
+attach_to_GTF <- bind_rows(miRNA, part_1_DF, part_2_DF, precursor_miRNA) %>% 
+  arrange(RNAcentral_id)
 
 # merge the two files
 gtf_piB_RCentr
