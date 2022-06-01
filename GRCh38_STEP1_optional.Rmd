@@ -686,6 +686,7 @@ identical(arrange(precursor_miRNA, RNAcentral_id)$RNAcentral_id, arrange(precurs
 #### other sncRNAs
 ```{r}
 rnacentral_ids_hg38
+
 rnacentral_ids_hg38 <- rnacentral_ids_hg38 %>% 
   filter(!RNA_type %in% c("miRNA", "precursor_RNA")) %>% 
   arrange(RNAcentral_id, gene_name, external_id) %>% 
