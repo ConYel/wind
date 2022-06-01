@@ -409,6 +409,7 @@ Biostrings::writeXStringSet(file.path("human_data",
 
 ```{bash run the bowtie docker}
 mkdir UTR3 CDS UTR5
+
 docker run --rm -ti -v $(pwd):/home/my_data  congelos/bowtie_bowtie2
 #UTR3 index
 bowtie-build -f -o 3 --threads 8 my_data/human_data/piRNA_Targets/UTR3/UTR3_hg38.fasta my_data/human_data/piRNA_Targets/UTR3/UTR3_hg38
