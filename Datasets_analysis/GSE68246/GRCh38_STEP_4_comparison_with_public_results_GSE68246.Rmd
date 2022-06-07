@@ -1,0 +1,109 @@
+---
+title: "wind: wORKFLOW FOR PiRNAs AnD BEYONd"
+subtitle: "Comparison of resulted Differential Expressed miRNAs with public results of  GSE68246, regarding Human Breast MCF-7 Cell Line with Cancer Stem Cell Properties"
+author: "Constantinos Yeles (Konstantinos Geles)"
+date: "`r format(Sys.time(), '%a %b %d %Y')`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+  html_document:
+    toc: yes
+    toc_depth: 3
+    theme: paper 
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+## Introduction
+Following the differential expression step I will compare the published results of the study with the results of WIND.
+We have to take into consideration that different miRNA databases version have been used.
+
+## Load libraries
+```{r load libraries, }
+suppressPackageStartupMessages({
+  library('tidyverse') 
+})
+```
+
+## Import the public results
+```{r public results, }
+public_miRNA_down <- readxl::read_excel(path = "Datasets_analysis/GSE68246/DEA_Breast_Cancer_CSC_GRCh38_08_Mar_2021/Public_results_GSE68246.xlsx", sheet = "Table S3 down", skip = 1) %>% 
+  select(pub_miRNA = "MCF7 Parental - Small RNA sample-1  mcf7 parental size grouped on mature - Name",
+         Sequence = "Feature ID", 
+         Fold_Change = "Experiment - Fold Change (original values)",
+         FDR = "Kal's Z-test: MCF7 Primary S vs MCF7 Parental original values - FDR p-value correction",
+        Bonferroni = "Kal's Z-test: MCF7 Primary S vs MCF7 Parental original values - Bonferroni")
+
+public_miRNA_up <- readxl::read_excel(path = "Datasets_analysis/GSE68246/DEA_Breast_Cancer_CSC_GRCh38_08_Mar_2021/Public_results_GSE68246.xlsx", sheet = "Table S3 up", skip = 1) %>% 
+  select(pub_miRNA = "MCF7 Parental - Small RNA sample-1  mcf7 parental size grouped on mature - Name",
+         Sequence = "Feature ID", 
+         Fold_Change = "Experiment - Fold Change (original values)",
+         FDR = "Kal's Z-test: MCF7 Primary S vs MCF7 Parental original values - FDR p-value correction",
+        Bonferroni = "Kal's Z-test: MCF7 Primary S vs MCF7 Parental original values - Bonferroni")
+
+public_miRNA <- bind_rows(public_miRNA_down, public_miRNA_up)
+
+rm(public_miRNA_down, public_miRNA_up)
+```
+
+## Import the wind results
+```{r identified DE, }
+wind_res <- read_tsv("Datasets_analysis/GSE68246/DEA_Breast_Cancer_CSC_GRCh38_08_Mar_2021/all_comparisons_voom_QW_TMM_salmon_fc_LFCs_08_Mar_2021.txt")
+
+# make long format 
+wind_res_long <- wind_res %>% 
+  pivot_longer(
+    cols = -c(smallRNA, gene_type),
+    names_to = c( "stat", "contrast", "tool"),
+    names_pattern = "^(logFC|adj.P.Val|P.Value)_(.+)_(salmon|FC)"
+               ) %>% 
+  select(-contrast ) %>% 
+  filter(stat != "P.Value") %>% 
+  pivot_wider(names_from = c(stat)) 
+
+# find how many DEs per tool
+wind_res_long %>% 
+  filter(adj.P.Val < 0.05) %>% count(tool)
+
+wind_res_long %>% 
+  filter(adj.P.Val < 0.05) %>% 
+  count(tool, gene_type, sort = TRUE) %>% 
+  pivot_wider(names_from = tool, values_from = n) 
+```
+
+## import the sequences from the GTF file
+```{r}
+smallRNAs_gtf <- file.path("human_data", "sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
+  plyranges::read_gff2() %>% 
+  as_tibble() %>% 
+  select(gene_id,  seq_RNA, gene_type) %>% 
+  distinct(gene_id, .keep_all = TRUE) %>% 
+  dplyr::rename("smallRNA" = gene_id)
+```
+
+## join them with wind results
+```{r}
+wind_res_long <- wind_res_long %>% 
+  left_join(smallRNAs_gtf)
+```
+
+## combine with public results
+```{r}
+wind_plus_pub <- wind_res_long %>% 
+  full_join(public_miRNA, by = c("seq_RNA" = "Sequence")) %>% 
+  filter(!is.na(pub_miRNA))
+```
+
+## search the results
+```{r}
+wind_plus_pub %>% 
+  filter(adj.P.Val < 0.05) %>% 
+  count(tool, gene_type, sort = TRUE)
+```
+
+
