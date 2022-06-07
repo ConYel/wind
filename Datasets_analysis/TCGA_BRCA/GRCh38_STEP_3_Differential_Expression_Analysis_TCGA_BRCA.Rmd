@@ -313,8 +313,8 @@ fc_cpm <- fc_norm %>%
    cpm(log =TRUE) %>%
   .[rownames(.) %in% piRNAs_DE$smallRNA,]
 ```
-### iii. make the matrices for the heatmap
 
+### iii. make the matrices for the heatmap
 ```{r heatmap mats}
 FC_mat_1 <- fc_cpm %>% 
   t() %>% scale() %>% t()
@@ -333,32 +333,33 @@ hist(lfc_piRNAs_DE)
 
 lfc_piRNAs_DE <- lfc_piRNAs_DE[rownames(FC_mat_1) ,]
 ```
-### iv add the Annotation ----
 
+### iv add the Annotation
 ```{r heatmap annot}
 #expression
 ha_1 <- HeatmapAnnotation(Group = fc_norm[["TMM"]]$samples$group,
                           annotation_name_side = "left",
                           col = list(Group =  fc_norm[["TMM"]]$colours %>% 
-                                       set_names( fc_norm[["TMM"]]$samples$group)))
+                                       set_names( fc_norm[["TMM"]]$samples$group)), gp = gpar(fontsize = 18))
 
 # lFCS
 ha_1_LFCs <- HeatmapAnnotation(Method = c("FeatureCounts", "salmon"),
-                              col = list(Method = wes_palettes$Moonrise1[c(2,3)] %>%
-                          set_names("FeatureCounts", "salmon")))
+                              col = list(Method = wes_palettes$Moonrise1[c(1,4)] %>%
+                          set_names("FeatureCounts", "salmon")), 
+                          gp = gpar(fontsize = 14))
 
 ## Colours of heatmap -----
 #expression
 f_1 <- colorRamp2(c(round(quantile(FC_mat_1, probs = 0.25)), 
-                    median(FC_mat_1),
+                    0,
                     round(quantile(FC_mat_1, probs = 0.75))), 
-                  c("blue", "black", "yellow"))
+                  c("#53868B", "#8B8878", "#FFD700"))
 
 # lFCS
 f_1_LFCs <- colorRamp2(c(quantile(lfc_piRNAs_DE, probs = 0.25) %>% round,
-                    mean(lfc_piRNAs_DE),
+                    0,
                     quantile(lfc_piRNAs_DE, probs = 0.75) %>% round),
-                    c("forestgreen", "black", "red"))
+                    c("#008B8B", "black", "#B22222"))
 ```
 ### v.make the  Heatmaps ------
 
@@ -399,7 +400,7 @@ ht_1_lFCs <- Heatmap(matrix = lfc_piRNAs_DE, #data
 #     merge_legend = TRUE)
 
 tiff(filename = file.path(dirname(dat_path[1]),str_c("BRCA_TCGA_tumour_vs_normal_heatmap_FC_", todate,".tiff")), 
-     compression = "none", height = 10, width = 14,  units = 'in', res = 600)
+     compression = "none", height = 10, width = 14,  units = 'in', res = 400)
 draw(ht_1 + ht_1_lFCs,
      column_title = str_glue("Heatmap of {nrow(FC_mat_1)} DE piRNAs"), 
      merge_legend = TRUE)

@@ -34,15 +34,15 @@ suppressPackageStartupMessages({
   library('DESeq2')
 })
 ```
+
 ## Add date of the analysis
 
 We use it as an identifier for the folder and generally the analysis
-
 ```{r todate_of_analysis}
 todate <- format(Sys.time(), "%d_%b_%Y")
 ```
-## Make the directory for the results of the DE analysis
 
+## Make the directory for the results of the DE analysis
 ```{r make dirs}
 my_basename <- file.path("Datasets_analysis", "GSE68246") ## INPUT name of the main folder 
 my_exp <- "Breast_Cancer_CSC" ## INPUT name of the analysis
@@ -52,8 +52,8 @@ dat_path <- file.path(my_basename, str_glue("DEA_{my_exp}_{genome_input}_{todate
                       my_tools) %>% set_names(my_tools)
 dat_path %>% map(~dir.create(., recursive = TRUE))
 ```
-## 1. Import the normalized files
 
+## 1. Import the normalized files
 ```{r import salmon and fc}
 list_norm_dgls <- list.files(path = my_basename, pattern = "list_norm_dgls.+rds",
   recursive = TRUE, full.names = TRUE)
@@ -292,7 +292,7 @@ public_res <- bind_rows(public_res_up,public_res_down) %>%
   rename_all(.funs = ~ .x %>% str_c("_public_res"))
 
 ## import the sequences from the GTF file -----
-smallRNAs_gtf <- file.path("human_data","sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
+smallRNAs_gtf <- file.path("human_data", "sncRNA_piRNBnk_RNACent_GRCh38_v34.gtf") %>% 
   plyranges::read_gff2() %>% 
   as_tibble() %>% 
   select(gene_id,  seq_RNA,gene_type) %>% 
@@ -356,7 +356,7 @@ piRNAs_DE <- list.files(path = dirname(dat_path[1]),
   dplyr::filter((logFC_Spheroid_Mono_FC > 0 & logFC_Spheroid_Mono_salmon > 0) | (logFC_Spheroid_Mono_FC < 0 & logFC_Spheroid_Mono_salmon < 0)) %>% 
   write_tsv(file.path(dirname(dat_path[1]), 
                       str_c("all_logFC_voom_QW_DE_piRNA_", todate,".txt")))
-  
+
 # load the piRNA expression matrix----
 ## featurecounts
 fc_cpm <- fc_norm %>% 
