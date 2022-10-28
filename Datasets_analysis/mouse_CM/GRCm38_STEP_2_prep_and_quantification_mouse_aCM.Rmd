@@ -110,7 +110,7 @@ for file in "${ANALYSIS_FOLDER}"/quants/*.sam;
 do 
 regex="${file%%.sam}";
 echo "Processing sample ${regex} start: $(date)"; 
-echo samtools view -O bam -o ${regex}.bam -@ 8 ${file};
+samtools view -O bam -o ${regex}.bam -@ 8 ${file};
 echo "end:$(date)";
 done
 # remove all .sam files
